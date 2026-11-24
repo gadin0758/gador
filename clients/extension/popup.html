@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>Gador 光效中枢</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      width: 280px;
+      padding: 14px;
+      background: radial-gradient(circle at 12% 0%, rgba(125, 152, 255, 0.22), transparent 55%), #0c101b;
+      color: #eef2ff;
+      font: 12.5px/1.45 "Inter", "PingFang SC", system-ui, sans-serif;
+    }
+    .head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+    .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; }
+    .beacon {
+      position: relative; width: 24px; height: 24px; display: inline-grid; place-items: center;
+    }
+    .beacon::before {
+      content: ""; position: absolute; inset: 0; border-radius: 50%;
+      background: radial-gradient(circle, rgba(125,152,255,0.4), transparent 72%);
+    }
+    .beacon > i {
+      width: 9px; height: 9px; border-radius: 50%; position: relative; z-index: 1;
+      background: radial-gradient(circle, #fff 0%, #eef3ff 36%, #7d98ff 82%);
+      box-shadow: 0 0 10px 2px rgba(125,152,255,0.75);
+    }
+    .beacon.idle { opacity: 0.4; filter: grayscale(0.7); }
+    .beacon.paused > i {
+      background: radial-gradient(circle, #fff 0%, #fff3d6 36%, #ffb547 82%);
+      box-shadow: 0 0 10px 2px rgba(255,181,71,0.75);
+    }
+    .card {
+      padding: 11px 12px;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      margin-bottom: 10px;
+    }
+    .status-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .status-text { font-weight: 600; }
+    .sub { margin: 5px 0 0; font-size: 11.5px; color: rgba(238,242,255,0.65); }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 8px 10px;
+      font: 500 12px/1.2 inherit;
+      color: #eef2ff;
+      background: rgba(255,255,255,0.07);
+      border: 1px solid rgba(255,255,255,0.1);
+      cursor: pointer;
+    }
+    button:hover { background: rgba(125,152,255,0.22); border-color: rgba(125,152,255,0.45); }
+    .btn-danger {
+      background: rgba(255,93,115,0.22);
+      color: #ff8a9b;
+      border-color: rgba(255,93,115,0.42);
+      width: 100%;
+      margin-top: 9px;
+      font-weight: 600;
+    }
+    .btn-primary {
+      background: rgba(125,152,255,0.24);
+      border-color: rgba(125,152,255,0.45);
+      width: 100%;
+      margin-top: 9px;
+      font-weight: 600;
+    }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="head">
+    <div class="brand">
+      <span class="beacon idle" id="beacon"><i></i></span>
+      <span>Gador 光效中枢</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="status-row">
+      <span class="status-text" id="status-text">原生浏览 · 无 AI 干扰</span>
+    </div>
+    <p class="sub" id="status-sub">当 AI 在后台操作网页时，此处与页面边缘将亮起同心光环并提供一键停止。</p>
+    <button class="btn-danger hidden" id="btn-toggle-ai" type="button">■ 停止 AI 操作</button>
+  </div>
+
+  <div class="grid">
+    <button id="btn-ai-space" type="button">标签总览</button>
+    <button id="btn-incognito" type="button">打开隐私窗口</button>
+    <button id="btn-skill" type="button">AI 技能与 MCP</button>
+    <button id="btn-vpn" type="button">独立 VPN</button>
+    <button id="btn-settings" type="button" style="grid-column:1/-1">Gador 融合设置</button>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

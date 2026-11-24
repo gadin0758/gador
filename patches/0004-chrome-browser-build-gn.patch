@@ -1,0 +1,18 @@
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -1133,6 +1133,7 @@
+     "//chrome/browser/google",
+     "//chrome/browser/gpu",
+     "//chrome/browser/headless",
++    "//chrome/browser/agent_kernel",
+     "//chrome/browser/hid",
+     "//chrome/browser/history",
+     "//chrome/browser/infobars",
+@@ -2388,6 +2389,7 @@
+     "//chrome/browser/glic/suggestions:impl",
+     "//chrome/browser/google",
+     "//chrome/browser/headless",
++    "//chrome/browser/agent_kernel",
+     "//chrome/browser/heavy_ad_intervention",
+     "//chrome/browser/hid",
+     "//chrome/browser/hid:impl",

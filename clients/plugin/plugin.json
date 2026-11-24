@@ -1,0 +1,15 @@
+{
+  "name": "gador",
+  "version": "0.1.0",
+  "description": "AI-Agent native Chromium browser plugin: windowless desktop daemon (--agent-daemon), isolated shared/private AgentSpaces, non-blocking JS dialogs, human-in-the-loop takeover, and Fail-Closed independent VPN routing.",
+  "skills": [
+    "../skills/gador"
+  ],
+  "mcpServers": "./.mcp.json",
+  "cli": {
+    "gador-ctl": "../cli/gador-ctl.mjs"
+  },
+  "sdk": "./sdk.mjs",
+  "sitePluginsDir": "../site-plugins",
+  "protocolSchema": "../protocol/schema.json"
+}

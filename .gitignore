@@ -1,0 +1,10 @@
+
+# Downloaded Chromium source tarballs & build outputs
+sources/
+build/
+dist/
+
+# Sensitive optional modules (kept local, excluded from Git & Linux release bundles)
+modules/vpn/
+modules/privacy-shield/
+

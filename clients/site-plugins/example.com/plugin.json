@@ -1,0 +1,26 @@
+{
+  "domain": "example.com",
+  "version": "0.1.0",
+  "authMode": "private",
+  "description": "Reference declarative Site Plugin demonstrating schema-first semantic tools for sites without native WebMCP.",
+  "tools": [
+    {
+      "name": "open_homepage",
+      "description": "Open example.com in an isolated AgentSpace page and verify non-zero viewport.",
+      "requiresConfirmation": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "spaceId": {
+            "type": "string",
+            "description": "Target AgentSpace ID (must already exist)."
+          }
+        },
+        "required": ["spaceId"]
+      },
+      "steps": [
+        { "op": "open", "url": "https://example.com" }
+      ]
+    }
+  ]
+}

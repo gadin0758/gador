@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Gador 光效与新标签页中枢",
+  "version": "0.1.0",
+  "description": "在原生 Gador 浏览器中提供 AI 状态光效与四引擎新标签页（VPN 与指纹防护已解耦为独立可安装模块）。",
+  "permissions": ["alarms", "tabs"],
+  "host_permissions": ["http://127.0.0.1:43118/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Gador AI 光效中枢",
+    "default_popup": "popup.html"
+  },
+  "chrome_url_overrides": {
+    "newtab": "newtab.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "exclude_matches": ["http://127.0.0.1:43118/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

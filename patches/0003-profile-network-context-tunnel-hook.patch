@@ -1,0 +1,23 @@
+--- a/chrome/browser/net/profile_network_context_service.cc
++++ b/chrome/browser/net/profile_network_context_service.cc
+@@ -48,6 +48,7 @@
+ #include "chrome/browser/ssl/ssl_config_service_manager.h"
+ #include "chrome/browser/webid/federated_identity_permission_context.h"
+ #include "chrome/browser/webid/federated_identity_permission_context_factory.h"
++#include "chrome/browser/agent_kernel/network_tunnel_provider.h"
+ #include "chrome/common/buildflags.h"
+ #include "chrome/common/chrome_constants.h"
+ #include "chrome/common/chrome_content_client.h"
+@@ -1476,6 +1477,11 @@
+     network_context_params->hsts_policy_bypass_list.push_back(*string_value);
+   }
+ 
+   proxy_config_monitor_->AddToNetworkContextParams(network_context_params);
++  if (auto* tunnel_provider =
++          agent_kernel::NetworkTunnelProvider::GetGlobalInstance()) {
++    tunnel_provider->ApplyToNetworkContextParams(profile_,
++                                                 network_context_params);
++  }
+ 
+   network_context_params->enable_certificate_reporting = true;
+ 

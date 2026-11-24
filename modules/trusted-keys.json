@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "keys": {
+    "gador-official-v1": {
+      "label": "Gador Official Module Publisher",
+      "algorithm": "ed25519",
+      "fingerprint": "c4e22b035f92a53c",
+      "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAPUEjuA6ZYkc282NndwwsFhUtimSgLRn4R/v6rZagV/Y=\n-----END PUBLIC KEY-----\n",
+      "createdAt": "2026-11-24T06:27:11.908Z"
+    }
+  }
+}

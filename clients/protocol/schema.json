@@ -1,0 +1,201 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "gador UDS Control Protocol v0.1",
+  "description": "Length-prefixed (uint32 BE) JSON/CBOR RPC protocol over 0600 Unix Domain Socket between gador Chromium kernel and external Agent adapters (MCP/CLI/SDK).",
+  "protocolVersion": "0.1.0",
+  "transport": {
+    "kind": "unix-domain-socket",
+    "defaultPath": "$XDG_RUNTIME_DIR/gador/ctl.sock",
+    "permissions": "0600",
+    "peerAuth": "SO_PEERCRED (same UID)",
+    "framing": "uint32_be_length + utf8_json_payload (max 64 MiB)"
+  },
+  "errorCodes": [
+    "ERR_INVALID_PARAMS",
+    "ERR_METHOD_NOT_FOUND",
+    "ERR_SPACE_NOT_FOUND",
+    "ERR_PAGE_NOT_FOUND",
+    "ERR_TARGET_OUT_OF_SCOPE",
+    "ERR_HUMAN_IN_CONTROL",
+    "ERR_SENSITIVE_ACTION_REQUIRES_HUMAN",
+    "ERR_DOMAIN_DENIED",
+    "ERR_TUNNEL_DISCONNECTED_FAIL_CLOSED",
+    "ERR_DIALOG_NOT_OPEN",
+    "ERR_INTERNAL"
+  ],
+  "enums": {
+    "AuthMode": ["shared", "private"],
+    "ControlState": ["AGENT_RUNNING", "USER_OBSERVING", "USER_ACTIVE"],
+    "RouteMode": ["strict_tunnel", "direct_only", "custom"],
+    "DialogType": ["alert", "confirm", "prompt", "beforeunload"],
+    "RuntimeMode": ["desktop", "daemon"]
+  },
+  "methods": {
+    "agent.capabilities": {
+      "description": "Self-describing browser capabilities, protocol version, runtime mode, and active policies.",
+      "params": {},
+      "result": {
+        "protocolVersion": "string",
+        "chromiumVersion": "string",
+        "runtimeMode": "RuntimeMode",
+        "windowShownByDefault": "boolean",
+        "features": "string[]",
+        "authModes": ["shared", "private"],
+        "networkPolicies": ["strict_tunnel", "direct_only", "custom"]
+      }
+    },
+    "space.create": {
+      "description": "Create an isolated AgentSpace (shared persistent Profile* or private ephemeral OTRProfile).",
+      "params": {
+        "name": "string",
+        "authMode": "AuthMode",
+        "viewport": "{ width: number, height: number }?"
+      },
+      "result": {
+        "spaceId": "string",
+        "name": "string",
+        "authMode": "AuthMode",
+        "controlState": "ControlState"
+      }
+    },
+    "space.list": {
+      "params": {},
+      "result": { "spaces": "SpaceInfo[]" }
+    },
+    "space.close": {
+      "params": { "spaceId": "string" },
+      "result": { "closed": "boolean" }
+    },
+    "page.open": {
+      "description": "Create a detached WebContents inside the given AgentSpace (never inserted into personal TabStripModel).",
+      "params": {
+        "spaceId": "string",
+        "url": "string",
+        "viewport": "{ width: number, height: number }?"
+      },
+      "result": {
+        "pageId": "string",
+        "spaceId": "string",
+        "url": "string",
+        "viewport": "{ width: number, height: number }",
+        "viewAttached": "boolean"
+      }
+    },
+    "page.list": {
+      "params": { "spaceId": "string?" },
+      "result": { "pages": "PageInfo[]" }
+    },
+    "page.close": {
+      "params": { "pageId": "string" },
+      "result": { "closed": "boolean" }
+    },
+    "page.attachView": {
+      "description": "Hot-mount the page WebContents into the expandable AgentSpaceWindow WebView (zero-copy, live observable/interactive).",
+      "params": { "pageId": "string", "interactive": "boolean?" },
+      "result": { "pageId": "string", "viewAttached": "boolean", "controlState": "ControlState", "mountCount": "number" }
+    },
+    "page.detachView": {
+      "description": "Unmount the page WebContents back to background execution (collapsed dock button mode).",
+      "params": { "pageId": "string" },
+      "result": { "pageId": "string", "viewAttached": "boolean", "controlState": "ControlState" }
+    },
+    "page.listNativeTabs": {
+      "description": "List native desktop browser tabs with their AI-controlled vs normal status (used by Overview).",
+      "params": {},
+      "result": { "tabs": "NativeTabInfo[]" }
+    },
+    "page.attachActiveTab": {
+      "description": "Hand over an existing user browser tab (active tab or given tabIndex) directly to AI with tab-level optical lightfield.",
+      "params": { "spaceId": "string?", "tabIndex": "number?" },
+      "result": { "pageId": "string", "spaceId": "string", "url": "string" }
+    },
+    "page.detachTab": {
+      "description": "Reclaim an AI-controlled native tab back to a normal human tab without closing the page.",
+      "params": { "pageId": "string?" },
+      "result": { "detached": "boolean" }
+    },
+    "page.focusTab": {
+      "description": "Activate and focus a native tab by pageId or tabIndex (or cycle to the next AI native tab).",
+      "params": { "pageId": "string?", "tabIndex": "number?" },
+      "result": { "focused": "boolean" }
+    },
+    "takeover.request": {
+      "description": "Enter USER_ACTIVE control state (either user-initiated or agent-requested for 2FA/CAPTCHA/permission).",
+      "params": { "spaceId": "string", "pageId": "string?", "reason": "string" },
+      "result": { "spaceId": "string", "controlState": "ControlState" }
+    },
+    "takeover.release": {
+      "description": "Return control from USER_ACTIVE back to AGENT_RUNNING.",
+      "params": { "spaceId": "string" },
+      "result": { "spaceId": "string", "controlState": "ControlState" }
+    },
+    "dialog.handle": {
+      "description": "Handle an open JS dialog without blocking renderer CDP sessions or changing space ownership.",
+      "params": { "pageId": "string", "accept": "boolean", "promptText": "string?" },
+      "result": { "handled": "boolean", "dialogType": "DialogType" }
+    },
+    "cdp.send": {
+      "description": "Send a scoped CDP command to an Agent-owned pageId (personal browser targets are strictly unreachable).",
+      "params": { "pageId": "string", "cdpMethod": "string", "cdpParams": "object?", "sessionId": "string?" },
+      "result": "object"
+    },
+    "network.setTunnel": {
+      "description": "Bind an independent VPN/tunnel endpoint or managed sidecar, completely overriding OS proxy settings.",
+      "params": {
+        "scope": "string (browser | space:<spaceId>)",
+        "mode": "RouteMode",
+        "endpoint": "string? (socks5:// | http:// | https:// | quic:// | unix://)",
+        "dohServer": "string?",
+        "bypassList": "string[]?",
+        "webrtcPolicy": "string? (default: disable_non_proxied_udp)",
+        "failClosed": "boolean"
+      },
+      "result": {
+        "scope": "string",
+        "mode": "RouteMode",
+        "osProxyDisabled": "boolean",
+        "webrtcPolicy": "string",
+        "failClosed": "boolean",
+        "tunnelHealthy": "boolean"
+      }
+    },
+    "network.getStatus": {
+      "params": { "scope": "string?" },
+      "result": { "routes": "TunnelStatus[]" }
+    },
+    "ui.getAppearance": {
+      "description": "Read native Chromium 158 browser appearance (ThemeService color scheme, accent color, native vertical/horizontal tabs, bookmark bar, and hot-reloadable native-ui.json).",
+      "params": {},
+      "result": {
+        "theme": "string (system | light | dark)",
+        "accentColor": "string",
+        "layout": "string (sidebar | chrome)",
+        "compact": "boolean",
+        "showBookmarkBar": "boolean",
+        "nativeUi": "object"
+      }
+    },
+    "ui.setAppearance": {
+      "description": "Live-apply native Chromium 158 browser theme, optical accent color, vertical/horizontal tabs, bookmark bar, or hot-reloadable native-ui.json aura/branding config with zero C++ recompilation.",
+      "params": {
+        "theme": "string?",
+        "accentColor": "string?",
+        "layout": "string?",
+        "compact": "boolean?",
+        "showBookmarkBar": "boolean?",
+        "resetDefaults": "boolean?",
+        "nativeUi": "object?"
+      },
+      "result": { "applied": "boolean", "nativeUi": "object" }
+    }
+  },
+  "events": [
+    "page.created",
+    "page.closed",
+    "dialog.opened",
+    "dialog.closed",
+    "takeover.changed",
+    "network.tunnelStateChanged",
+    "cdp.event"
+  ]
+}

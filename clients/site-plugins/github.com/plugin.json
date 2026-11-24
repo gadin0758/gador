@@ -1,0 +1,59 @@
+{
+  "domain": "github.com",
+  "version": "0.1.0",
+  "authMode": "shared",
+  "description": "Declarative Site Plugin for GitHub reusing the user's shared authenticated session without disturbing personal tabs.",
+  "tools": [
+    {
+      "name": "open_repo",
+      "description": "Open a GitHub repository page in the given shared AgentSpace.",
+      "requiresConfirmation": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "spaceId": { "type": "string", "description": "Target shared AgentSpace ID." },
+          "owner": { "type": "string", "description": "GitHub organization or username." },
+          "repo": { "type": "string", "description": "Repository name." }
+        },
+        "required": ["spaceId", "owner", "repo"]
+      },
+      "steps": [
+        { "op": "open", "url": "https://github.com/{{owner}}/{{repo}}" }
+      ]
+    },
+    {
+      "name": "open_pulls",
+      "description": "Open a GitHub repository's Pull Requests list in the given AgentSpace.",
+      "requiresConfirmation": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "spaceId": { "type": "string", "description": "Target shared AgentSpace ID." },
+          "owner": { "type": "string", "description": "GitHub organization or username." },
+          "repo": { "type": "string", "description": "Repository name." }
+        },
+        "required": ["spaceId", "owner", "repo"]
+      },
+      "steps": [
+        { "op": "open", "url": "https://github.com/{{owner}}/{{repo}}/pulls" }
+      ]
+    },
+    {
+      "name": "open_new_issue",
+      "description": "Prepare a new GitHub Issue form (confirmation-gated before submitting).",
+      "requiresConfirmation": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "spaceId": { "type": "string" },
+          "owner": { "type": "string" },
+          "repo": { "type": "string" }
+        },
+        "required": ["spaceId", "owner", "repo"]
+      },
+      "steps": [
+        { "op": "open", "url": "https://github.com/{{owner}}/{{repo}}/issues/new" }
+      ]
+    }
+  ]
+}

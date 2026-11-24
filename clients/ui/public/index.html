@@ -1,0 +1,963 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="system">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark light" />
+  <title>Gador — AI Agent Browser</title>
+  <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="zen" id="zen" data-shell="embedded" data-layout="sidebar" data-view="settings" data-space-mode="normal" data-ai-active="false" data-has-ai="false" data-accent="adaptive" data-frost="off" data-glow="standard" data-auth="none" data-control="IDLE" data-conn="connecting" data-compact="false">
+    <!-- Ambient light field: the living backdrop whose colors follow theme + personalization + control state -->
+    <div class="lightfield" aria-hidden="true">
+      <span class="orb orb-a"></span>
+      <span class="orb orb-b"></span>
+      <span class="orb orb-c"></span>
+      <span class="grain"></span>
+    </div>
+
+    <!-- Chrome Horizontal × Light Header (visible when data-layout="chrome") -->
+    <header class="chrome-top" id="chrome-top" aria-label="Chrome 风格顶部栏">
+      <div class="chrome-tabstrip">
+        <div class="chrome-brand">
+          <img class="brand-icon" src="/icon.svg" alt="" width="18" height="18" />
+          <span class="status-light"></span>
+          <span class="brand-name">gador</span>
+        </div>
+        <div class="chrome-workspaces" id="chrome-workspaces" role="tablist" aria-label="AI 运行空间"></div>
+        <div class="chrome-tabs" id="chrome-tab-list" role="listbox" aria-label="标签页"></div>
+        <button class="icon-btn sm chrome-new-tab" id="chrome-btn-new-tab" type="button" aria-label="新建标签页" title="新页面 (Ctrl+L)">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>
+        </button>
+        <div class="chrome-strip-right">
+          <span class="brand-meta" id="chrome-runtime-meta">connecting</span>
+        </div>
+      </div>
+
+      <div class="chrome-toolbar" id="chrome-toolbar">
+        <div class="chrome-nav">
+          <button class="icon-btn" id="chrome-btn-refresh" type="button" aria-label="刷新状态" title="刷新状态">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg>
+          </button>
+          <div class="space-switcher compact" id="chrome-space-switcher" role="tablist" aria-label="空间切换（日常与 AI 运行分离）">
+            <button class="space-pill active" id="chrome-space-normal" data-set-space-mode="normal" type="button" role="tab" aria-selected="true" title="非 AI 运行的日常浏览空间">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M2.8 8h10.4M8 2.5a8.5 8.5 0 0 1 0 11M8 2.5a8.5 8.5 0 0 0 0 11"/></svg>
+              <span>日常</span>
+            </button>
+            <button class="space-pill ai-pill" id="chrome-space-ai" data-set-space-mode="ai" type="button" role="tab" aria-selected="false" title="AI 正在运行与托管的空间">
+              <span class="ai-beacon xs" id="chrome-space-ai-beacon" aria-hidden="true"><i></i></span>
+              <span>AI 运行</span>
+              <em class="space-count" id="chrome-ai-count">0</em>
+            </button>
+          </div>
+          <span class="chrome-ws-pill" id="chrome-ws-pill">
+            <i class="ws-light" aria-hidden="true"></i>
+            <span id="chrome-ws-name">AI 运行空间</span>
+            <em id="chrome-ws-auth"></em>
+            <button class="icon-btn sm" id="chrome-btn-close-space" type="button" aria-label="关闭当前 AI 空间" title="关闭当前 AI 空间">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 4.5 7 7m0-7-7 7"/></svg>
+            </button>
+          </span>
+        </div>
+
+        <button class="chrome-omnibox" id="chrome-omnibox" type="button" title="打开页面 (Ctrl+L)">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
+          <span id="chrome-omnibox-text">搜索或输入网址…</span>
+          <kbd>Ctrl L</kbd>
+        </button>
+
+        <div class="chrome-actions" role="group" aria-label="快捷工具">
+          <button class="icon-btn badge-icon-btn" id="chrome-nav-overview" data-nav-view="overview" type="button" aria-label="浏览当前区域全部页面" title="当前区域全部页面 (Alt+G)">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="5" height="5" rx="1.2"/><rect x="9" y="2" width="5" height="5" rx="1.2"/><rect x="2" y="9" width="5" height="5" rx="1.2"/><rect x="9" y="9" width="5" height="5" rx="1.2"/></svg>
+            <em class="mini-badge" id="chrome-badge-pages">0</em>
+          </button>
+          <button class="icon-btn incognito-btn" id="chrome-btn-incognito" type="button" aria-label="打开隐私窗口" title="打开隐私窗口（无痕）">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 7.5h12M4.2 7.5 5.6 3.5c.3-.8 1.2-1 2.4-1s2.1.2 2.4 1l1.4 4"/><circle cx="5.2" cy="11.2" r="2"/><circle cx="10.8" cy="11.2" r="2"/><path d="M7.2 11.2h1.6"/></svg>
+          </button>
+          <button class="user-settings-chip" id="chrome-nav-settings" data-nav-view="settings" type="button" aria-label="Google 账户与 Gador 设置" title="Google 账户与设置（个性化 / AI / VPN · Alt+S）">
+            <span class="user-avatar" aria-hidden="true">G</span>
+            <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M12.4 3.6l-1.1 1.1M4.7 11.3l-1.1 1.1"/></svg>
+            <i class="pulse-dot" id="chrome-activity-dot"></i>
+          </button>
+          <button class="chrome-tool hidden" id="chrome-nav-ai" data-nav-view="ai" type="button" aria-hidden="true"></button>
+          <button class="chrome-tool hidden" id="chrome-nav-vpn" data-nav-view="vpn" type="button" data-health="direct" aria-hidden="true"></button>
+          <button class="chrome-tool hidden" id="chrome-nav-personalization" data-nav-view="personalization" type="button" aria-hidden="true"></button>
+          <button class="chrome-tool hidden" id="chrome-ess-network" type="button" data-tone="network" data-health="direct" aria-hidden="true"></button>
+          <button class="chrome-tool hidden" id="chrome-ess-activity" type="button" data-tone="activity" aria-hidden="true"></button>
+          <span class="chrome-sep" aria-hidden="true"></span>
+          <button class="icon-btn" id="btn-layout-chrome" type="button" aria-label="切换到 Zen 侧边栏" title="切换到 Zen 侧边栏 (Alt+L)">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="2.5"/><path d="M6 3v10"/></svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Compact mode: hovering the left edge reveals the floating sidebar -->
+    <div class="edge-hot" aria-hidden="true"></div>
+
+    <!-- Zen Vertical Sidebar -->
+    <aside class="sidebar" id="sidebar" aria-label="Gador 侧边栏">
+      <div class="sb-top">
+        <div class="brand">
+          <img class="brand-icon" src="/icon.svg" alt="" width="20" height="20" />
+          <span class="status-light" id="status-light"></span>
+          <span class="brand-name">gador</span>
+          <span class="brand-meta" id="runtime-meta">connecting</span>
+        </div>
+        <div class="sb-tools">
+          <button class="icon-btn" id="btn-refresh" type="button" aria-label="刷新状态" title="刷新状态">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg>
+          </button>
+          <button class="icon-btn" id="btn-layout-sidebar" type="button" aria-label="切换到 Chrome 顶部栏" title="切换到 Chrome 顶部栏 (Alt+L)">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="2.5"/><path d="M2 6.5h12"/></svg>
+          </button>
+          <button class="icon-btn" id="btn-compact" type="button" aria-label="紧凑模式" title="紧凑模式 (Ctrl+B)">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="2.5"/><path d="M6 3v10"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <button class="url-trigger" id="url-trigger" type="button" title="打开页面 (Ctrl+L)">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
+        <span id="url-trigger-text">打开页面或输入网址…</span>
+        <kbd>Ctrl L</kbd>
+      </button>
+
+      <!-- Space Switcher: separates Non-AI Personal Browsing vs AI-Running Pages -->
+      <div class="space-switcher" id="space-switcher" role="tablist" aria-label="空间切换（日常与 AI 运行分离）">
+        <button class="space-pill active" id="space-btn-normal" data-set-space-mode="normal" type="button" role="tab" aria-selected="true" title="非 AI 运行的日常浏览空间">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M2.8 8h10.4M8 2.5a8.5 8.5 0 0 1 0 11M8 2.5a8.5 8.5 0 0 0 0 11"/></svg>
+          <span>日常空间</span>
+        </button>
+        <button class="space-pill ai-pill" id="space-btn-ai" data-set-space-mode="ai" type="button" role="tab" aria-selected="false" title="AI 正在运行与托管的页面">
+          <span class="ai-beacon xs" id="sb-space-ai-beacon" aria-hidden="true"><i></i></span>
+          <span>AI 空间</span>
+          <em class="space-count" id="sb-ai-count">0</em>
+        </button>
+        <button class="hidden" id="ess-network" type="button" data-tone="network" data-health="direct" aria-hidden="true"></button>
+        <button class="hidden" id="ess-activity" type="button" data-tone="activity" aria-hidden="true"></button>
+        <button class="hidden" id="nav-ai" data-nav-view="ai" type="button" aria-hidden="true"></button>
+        <button class="hidden" id="nav-vpn" data-nav-view="vpn" data-health="direct" type="button" aria-hidden="true"></button>
+        <button class="hidden" id="nav-personalization" data-nav-view="personalization" type="button" aria-hidden="true"></button>
+      </div>
+
+      <div class="ws-header">
+        <span class="ws-light" aria-hidden="true"></span>
+        <span class="ws-name" id="ws-name">日常空间</span>
+        <span class="ws-auth" id="ws-auth"></span>
+        <button class="icon-btn sm badge-icon-btn" id="nav-overview" data-nav-view="overview" type="button" aria-label="当前区域全部页面" title="浏览当前区域全部页面 (Alt+G)">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="5" height="5" rx="1.2"/><rect x="9" y="2" width="5" height="5" rx="1.2"/><rect x="2" y="9" width="5" height="5" rx="1.2"/><rect x="9" y="9" width="5" height="5" rx="1.2"/></svg>
+          <em class="mini-badge" id="sb-badge-pages">0</em>
+        </button>
+        <button class="icon-btn sm" id="btn-close-space" type="button" aria-label="关闭当前 AI 空间" title="关闭当前 AI 空间">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 4.5 7 7m0-7-7 7"/></svg>
+        </button>
+      </div>
+      <div class="hairline" aria-hidden="true"></div>
+
+      <div class="tabs" id="tab-list" role="listbox" aria-label="页面"></div>
+
+      <button class="new-tab" id="btn-new-tab" type="button">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>
+        <span>新页面</span>
+      </button>
+
+      <div class="sb-bottom">
+        <div class="workspaces" id="workspace-list" role="tablist" aria-label="AI 运行空间"></div>
+        <div class="sb-bottom-actions">
+          <button class="icon-btn incognito-btn" id="btn-incognito" type="button" aria-label="打开隐私窗口" title="打开隐私窗口（无痕）">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 7.5h12M4.2 7.5 5.6 3.5c.3-.8 1.2-1 2.4-1s2.1.2 2.4 1l1.4 4"/><circle cx="5.2" cy="11.2" r="2"/><circle cx="10.8" cy="11.2" r="2"/><path d="M7.2 11.2h1.6"/></svg>
+          </button>
+          <button class="user-settings-chip" id="nav-settings" data-nav-view="settings" type="button" aria-label="Google 账户与 Gador 设置" title="Google 账户与设置（个性化 / AI / VPN · Alt+S）">
+            <span class="user-avatar" aria-hidden="true">G</span>
+            <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M12.4 3.6l-1.1 1.1M4.7 11.3l-1.1 1.1"/></svg>
+            <i class="pulse-dot" id="activity-dot"></i>
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Luminous Stage: hosts Page Viewport + 5 Dedicated Frosted Hubs -->
+    <main class="stage">
+      <section class="panel" id="panel" aria-label="Gador 主舞台">
+        <div class="panel-light" aria-hidden="true"></div>
+
+        <!-- Unified Single-Layer Gador Top Navigation Bar (with Back/Forward/Return + Bookmark Bar toggle + Incognito) -->
+        <nav class="settings-subnav" id="settings-subnav" aria-label="Gador 设置分区">
+          <div class="settings-subnav-brand">
+            <div class="subnav-nav-btns" role="group" aria-label="页面导航">
+              <button class="icon-btn sm" id="subnav-btn-back" type="button" aria-label="回退" title="回退 (Alt+←)">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10.5 3.5 5.5 8l5 4.5"/></svg>
+              </button>
+              <button class="icon-btn sm" id="subnav-btn-forward" type="button" aria-label="前进" title="前进 (Alt+→)">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 3.5 10.5 8l-5 4.5"/></svg>
+              </button>
+            </div>
+            <img src="/icon.svg" alt="" width="20" height="20" />
+            <strong>Gador</strong>
+          </div>
+          <div class="settings-subnav-tabs">
+            <button class="subnav-tab" data-nav-view="settings" type="button">账户与常规</button>
+            <button class="subnav-tab" data-nav-view="personalization" type="button">个性化</button>
+            <button class="subnav-tab" data-nav-view="ai" type="button">AI 中枢与技能</button>
+            <button class="subnav-tab" data-nav-view="vpn" type="button">独立 VPN</button>
+            <button class="subnav-tab" data-nav-view="page" id="subnav-ai-space" type="button">AI 运行空间</button>
+          </div>
+          <div class="settings-subnav-actions">
+            <button class="icon-btn incognito-btn" id="subnav-btn-bookmarks" type="button" aria-label="切换原生书签栏" title="切换显示 / 隐藏原生书签栏">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m8 2.2 1.8 3.6 4 .6-2.9 2.8.7 4L8 11.3 4.4 13.2l.7-4-2.9-2.8 4-.6z"/></svg>
+            </button>
+            <button class="icon-btn incognito-btn" id="subnav-btn-incognito" type="button" aria-label="打开隐私窗口" title="打开隐私窗口（无痕）">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 7.5h12M4.2 7.5 5.6 3.5c.3-.8 1.2-1 2.4-1s2.1.2 2.4 1l1.4 4"/><circle cx="5.2" cy="11.2" r="2"/><circle cx="10.8" cy="11.2" r="2"/><path d="M7.2 11.2h1.6"/></svg>
+            </button>
+          </div>
+        </nav>
+
+        <!-- VIEW 1: Active Page Live Viewport -->
+        <div class="panel-surface view-pane" id="view-page" data-view-pane="page">
+          <header class="panel-bar">
+            <span class="ai-beacon sm hidden" id="panel-ai-beacon" title="AI 正在运行此页面" aria-label="AI 正在运行"><i></i></span>
+            <span class="frame-host" id="frame-host">gador</span>
+            <span class="frame-path" id="frame-path"></span>
+            <span class="frame-time" id="frame-time"></span>
+            <button class="ai-stop-pill hidden" id="btn-stop-ai-bar" type="button" title="立即停止 AI 对此空间的操作">
+              <span class="stop-sq" aria-hidden="true"></span>
+              <span>停止 AI</span>
+            </button>
+            <button class="btn ghost xs hidden" id="btn-open-native-tab" type="button" title="在原生 60fps 真实浏览器窗口中直接打开此网页">原生窗口打开</button>
+            <button class="btn ghost xs" id="btn-open-overview-bar" type="button" title="浏览当前区域全部页面 (Alt+G)">全部页面</button>
+          </header>
+          <div class="viewport" id="viewport" data-loading="false">
+            <div class="empty" id="empty-state">
+              <div class="beacon" aria-hidden="true"><span></span><span></span><span></span></div>
+              <p class="empty-title">安静地运行在光里</p>
+              <p class="empty-sub">gador 正以无窗口守护模式在后台执行。选择一个页面查看实时画面，按 <kbd>Ctrl</kbd> <kbd>L</kbd> 打开新页面，或前往「AI 中枢」「独立 VPN」「个性化」定制你的浏览器。</p>
+              <div class="empty-shortcuts">
+                <button class="btn glow" id="empty-btn-new" type="button">打开新页面</button>
+                <button class="btn ghost" id="empty-btn-personal" type="button">个性化光效</button>
+                <button class="btn ghost" id="empty-btn-vpn" type="button">独立 VPN</button>
+                <button class="btn ghost" id="empty-btn-ai" type="button">AI 中枢</button>
+              </div>
+            </div>
+            <p class="frame-note hidden" id="frame-note"></p>
+            <img id="frame" class="frame hidden" alt="Agent 页面实时画面" />
+          </div>
+        </div>
+
+        <!-- VIEW 2: All Pages Overview in Current Space / All Spaces -->
+        <div class="hub-surface view-pane hidden" id="view-overview" data-view-pane="overview">
+          <header class="hub-header">
+            <div class="hub-title-group">
+              <span class="hub-kicker">SPACE OVERVIEW · 全览视图</span>
+              <h1 id="overview-title">当前区域全部页面</h1>
+              <p id="overview-sub">以磨砂光效卡片一览当前工作空间的全部标签页，支持一键截帧、热挂载与快速切换。</p>
+            </div>
+            <div class="hub-actions">
+              <div class="segmented compact" role="group" aria-label="页面范围">
+                <button class="seg-btn active" id="ov-scope-current" type="button">当前空间</button>
+                <button class="seg-btn" id="ov-scope-all" type="button">全部空间</button>
+              </div>
+              <button class="btn ghost" id="btn-ov-refresh-thumbs" type="button">刷新全部预览</button>
+              <button class="btn glow" id="btn-ov-new-page" type="button">+ 新建页面</button>
+              <button class="btn ghost" data-back-page type="button">返回页面</button>
+            </div>
+          </header>
+          <div class="overview-grid" id="overview-grid"></div>
+        </div>
+
+        <!-- VIEW 3: Dedicated AI Hub (AI 中枢) -->
+        <div class="hub-surface view-pane hidden" id="view-ai" data-view-pane="ai">
+          <header class="hub-header">
+            <div class="hub-title-group">
+              <span class="hub-kicker">AI AGENT HUB · 核心专区</span>
+              <h1>AI 中枢与人机安全围栏</h1>
+              <p>实时掌控 AgentSpaces、人工接管状态、密码/支付内核硬围栏、MCP/CLI 接入与内核事件流。</p>
+            </div>
+            <div class="hub-actions">
+              <button class="btn ghost" id="ai-btn-create-shared" type="button">+ 共享登录空间</button>
+              <button class="btn ghost" id="ai-btn-create-private" type="button">+ 私密 OTR 空间</button>
+              <button class="btn glow" id="ai-btn-takeover" type="button">人工接管 / 交还</button>
+              <button class="btn ghost" data-back-page type="button">返回页面</button>
+            </div>
+          </header>
+
+          <div class="hub-grid cols-2">
+            <!-- Control State & Runtime Live Card -->
+            <article class="glass-card spotlight-card">
+              <div class="card-head">
+                <div>
+                  <span class="card-kicker">实时控制权</span>
+                  <h2 id="ai-control-headline">空闲待命</h2>
+                </div>
+                <span class="status-pill" id="ai-control-pill">IDLE</span>
+              </div>
+              <p class="card-desc" id="ai-control-desc">在无窗口守护模式下，AI 页面保持 1280×800 视口与前台调度不降频；你随时可一键接管冻结写入。</p>
+              <div class="stat-row">
+                <div class="stat-chip"><span class="stat-label">运行形态</span><strong id="ai-stat-runtime">—</strong></div>
+                <div class="stat-chip"><span class="stat-label">活跃空间</span><strong id="ai-stat-spaces">0</strong></div>
+                <div class="stat-chip"><span class="stat-label">托管页面</span><strong id="ai-stat-pages">0</strong></div>
+                <div class="stat-chip"><span class="stat-label">待处理弹窗</span><strong id="ai-stat-dialogs">0</strong></div>
+              </div>
+            </article>
+
+            <!-- Credential & Payment Hard Guard Card -->
+            <article class="glass-card spotlight-card shield-card">
+              <div class="card-head">
+                <div>
+                  <span class="card-kicker">KERNEL SECURITY GUARD · 内核硬隔离</span>
+                  <h2>密码与支付强制人工接管</h2>
+                </div>
+                <span class="status-pill ok" id="ai-guard-pill">已强制启用</span>
+              </div>
+              <ul class="guard-list">
+                <li>
+                  <span class="guard-dot ok"></span>
+                  <div>
+                    <strong>密码与付款存储物理不可达</strong>
+                    <p>内核完全拒绝 <code>chrome://password-manager</code>、<code>chrome://settings/payments</code>、<code>file://</code>、<code>Autofill.*</code>、<code>WebAuthn.*</code> 与 <code>DOM.setFileInputFiles</code>（<code>ERR_DOMAIN_DENIED</code>）。</p>
+                  </div>
+                </li>
+                <li>
+                  <span class="guard-dot warm"></span>
+                  <div>
+                    <strong>密码框与支付页强制交由人工操作</strong>
+                    <p>一旦 Blink 检测到密码输入框（<code>TEXT_INPUT_TYPE_PASSWORD</code>）或支付/结账/银行卡流程，内核自动锁入 <code>USER_ACTIVE</code> 并拦截 AI（<code>ERR_SENSITIVE_ACTION_REQUIRES_HUMAN</code>）。</p>
+                  </div>
+                </li>
+                <li>
+                  <span class="guard-dot"></span>
+                  <div>
+                    <strong>接管期间零偷窥</strong>
+                    <p>进入 <code>USER_ACTIVE</code> 后，所有 AI 写入、脚本执行与实时截屏同步冻结（<code>ERR_HUMAN_IN_CONTROL</code>），直到你主动交还控制权。</p>
+                  </div>
+                </li>
+              </ul>
+            </article>
+
+            <!-- MCP / CLI / Skill Ecosystem Card -->
+            <article class="glass-card spotlight-card skill-card-span">
+              <div class="card-head">
+                <div>
+                  <span class="card-kicker">AGENT SKILL &amp; MCP PLUGIN CENTER · 仅限网页链接操作</span>
+                  <h2>AI 技能（Skill）与 MCP 自操作插件</h2>
+                </div>
+                <span class="status-pill ok" id="ai-socket-chip">自动拉起守护 · 0600 UDS</span>
+              </div>
+              <p class="card-desc">AI 可直接通过本技能与 MCP 插件自主操作网页链接（打开链接、读取语义快照、提取链接、点击、输入、滚动、截屏），自动拉起后台守护进程；密码存储、付款方式与本地文件仍由内核物理封禁。</p>
+
+              <div class="skill-actions">
+                <button class="btn glow xs" id="btn-copy-skill-md" type="button">复制 SKILL.md 全文</button>
+                <button class="btn ghost xs" id="btn-copy-mcp-json" type="button">复制 MCP 配置 JSON</button>
+                <button class="btn ghost xs" id="btn-toggle-skill-preview" type="button">展开 / 收起 Skill 详情</button>
+                <button class="btn ghost xs" id="btn-copy-socket" type="button">复制 UDS Socket</button>
+              </div>
+
+              <div class="cmd-list" id="ai-skill-paths"></div>
+
+              <div class="pref-group">
+                <span class="pref-label">已暴露给 AI 的网页链接自操作 MCP 工具（点击名称可复制）</span>
+                <div class="feature-tags" id="ai-mcp-tools"></div>
+              </div>
+
+              <div class="cmd-list">
+                <div class="cmd-row">
+                  <div><span class="cmd-label">MCP 协议服务（AI 掉线自动拉起守护）</span><code id="ai-mcp-bin">gador-mcp</code></div>
+                  <button class="btn ghost xs" data-copy-cmd="gador-mcp" type="button">复制</button>
+                </div>
+                <div class="cmd-row">
+                  <div><span class="cmd-label">控制面 Socket</span><code id="ai-socket-path">$XDG_RUNTIME_DIR/gador/ctl.sock</code></div>
+                  <button class="btn ghost xs" data-copy-cmd="gador-ctl capabilities" type="button">复制 CLI</button>
+                </div>
+              </div>
+
+              <pre class="skill-preview hidden" id="ai-skill-preview"></pre>
+            </article>
+
+            <!-- Live Kernel Event Stream Card -->
+            <article class="glass-card spotlight-card">
+              <div class="card-head">
+                <div>
+                  <span class="card-kicker">REALTIME TELEMETRY</span>
+                  <h2>实时内核事件流</h2>
+                </div>
+                <button class="btn ghost xs" id="ai-btn-clear-events" type="button">清空日志</button>
+              </div>
+              <ol class="events inline-events" id="ai-event-log"></ol>
+            </article>
+          </div>
+        </div>
+
+        <!-- VIEW 4: Dedicated Independent VPN Hub (独立 VPN 专区) -->
+        <div class="hub-surface view-pane hidden" id="view-vpn" data-view-pane="vpn">
+          <header class="hub-header">
+            <div class="hub-title-group">
+              <span class="hub-kicker">INDEPENDENT VPN · 核心专区</span>
+              <h1>独立网络通道与防泄漏中心</h1>
+              <p>彻底脱离宿主机系统代理干扰，强制禁用非代理 WebRTC UDP，支持全局统一出口与私密 OTR 空间独立出口及 Fail-Closed 熔断。</p>
+            </div>
+            <div class="hub-actions">
+              <span class="chip" id="vpn-hub-os-chip">系统代理已隔离</span>
+              <button class="btn ghost" id="vpn-btn-quick-direct" type="button">恢复浏览器直连</button>
+              <button class="btn ghost" data-back-page type="button">返回页面</button>
+            </div>
+          </header>
+
+          <!-- Top 3 Security Metric Cards -->
+          <div class="hub-grid cols-3 vpn-metrics">
+            <article class="glass-card metric-card">
+              <span class="card-kicker">OS PROXY ISOLATION</span>
+              <strong id="vpn-metric-os">已彻底切断</strong>
+              <p>宿主机系统代理变更绝不覆写浏览器网络栈。</p>
+            </article>
+            <article class="glass-card metric-card">
+              <span class="card-kicker">WEBRTC LEAK SHIELD</span>
+              <strong id="vpn-metric-webrtc">disable_non_proxied_udp</strong>
+              <p>默认强制阻断非隧道 UDP 候选地址泄漏真实 IP。</p>
+            </article>
+            <article class="glass-card metric-card">
+              <span class="card-kicker">FAIL-CLOSED KILL-SWITCH</span>
+              <strong id="vpn-metric-killswitch">严格熔断待命</strong>
+              <p>严格隧道断开时返回错误码阻断出网，绝不静默回退。</p>
+            </article>
+          </div>
+
+          <div class="hub-grid cols-2">
+            <!-- Tunnel Policy Editor Card -->
+            <article class="glass-card spotlight-card">
+              <div class="card-head">
+                <div>
+                  <span class="card-kicker">TUNNEL CONFIGURATION</span>
+                  <h2>配置独立出口策略</h2>
+                </div>
+                <span class="status-pill" id="vpn-active-badge">直连</span>
+              </div>
+              <form class="vpn-form" id="vpn-hub-form">
+                <label class="field">
+                  <span>作用域（shared 空间自动沿用 browser；private 空间可填 space:sp_x）</span>
+                  <input type="text" id="vpn-hub-scope" value="browser" placeholder="browser 或 space:sp_1" autocomplete="off" />
+                </label>
+                <div class="field">
+                  <span>路由模式</span>
+                  <div class="segmented" role="radiogroup" aria-label="VPN 路由模式">
+                    <label><input type="radio" name="vpn-hub-mode" value="strict_tunnel" checked /><span>严格隧道</span></label>
+                    <label><input type="radio" name="vpn-hub-mode" value="direct_only" /><span>仅直连</span></label>
+                    <label><input type="radio" name="vpn-hub-mode" value="custom" /><span>自定义分流</span></label>
+                  </div>
+                </div>
+                <label class="field">
+                  <span>隧道端点（socks5:// · http:// · https:// · quic://）</span>
+                  <input type="text" id="vpn-hub-endpoint" placeholder="socks5://127.0.0.1:7890" autocomplete="off" />
+                </label>
+                <label class="field">
+                  <span>独立 DoH 服务器（可选，避免本地 DNS 泄漏）</span>
+                  <input type="text" id="vpn-hub-doh" placeholder="https://dns.quad9.net/dns-query" autocomplete="off" />
+                </label>
+                <label class="switch">
+                  <input type="checkbox" id="vpn-hub-fail-closed" checked />
+                  <span>启用 Fail-Closed 熔断：隧道中断时严格阻断出网</span>
+                </label>
+                <button type="submit" class="btn glow full" id="vpn-hub-submit">热更新独立出口策略</button>
+              </form>
+            </article>
+
+            <!-- Active Routes & Space Binding Card -->
+            <article class="glass-card spotlight-card">
+              <div class="card-head">
+                <div>
+                  <span class="card-kicker">ACTIVE ROUTES</span>
+                  <h2>当前生效路由与空间映射</h2>
+                </div>
+                <button class="btn ghost xs" id="vpn-btn-refresh" type="button">刷新状态</button>
+              </div>
+              <div class="routes" id="vpn-hub-routes"></div>
+              <div class="vpn-space-hint">
+                <h4>双态出口规则</h4>
+                <p><strong>shared 空间</strong>与个人浏览共享同一 <code>browser</code> 出口，杜绝同账号双 IP 风控；<strong>private OTR 空间</strong>可点击下方快捷按钮填入专属 <code>space:&lt;id&gt;</code> 绑定独立节点。</p>
+                <div class="quick-space-pills" id="vpn-private-pills"></div>
+              </div>
+            </article>
+          </div>
+
+          <!-- VPN-Only Open Archive & Mandatory Pre-Modify Backup Zone (same page!) -->
+          <div class="hub-grid cols-2 vpn-archive-grid">
+            <!-- Left: VPN Profiles Archive (AI-Editable, VPN-Only Scope) -->
+            <article class="glass-card spotlight-card">
+              <div class="card-head">
+                <div>
+                  <span class="card-kicker">VPN-ONLY OPEN ARCHIVE · 仅限 VPN 允许 AI 修改</span>
+                  <h2>VPN 配置档案与开放接口</h2>
+                </div>
+                <span class="status-pill ok">仅 VPN 可改</span>
+              </div>
+              <p class="card-desc">允许 AI 通过 MCP/HTTP 接口读取并修改此处的 VPN 档案与出口配置（仅限 VPN 内容，其他浏览器设置/密码/支付严格锁定）；<strong>每次修改前均强制自动备份</strong>。</p>
+
+              <div class="vpn-save-row">
+                <input type="text" id="vpn-profile-name" placeholder="为当前表单策略命名（如：日本低延迟节点）" autocomplete="off" />
+                <button class="btn glow xs" id="vpn-btn-save-profile" type="button">保存为档案</button>
+              </div>
+
+              <div class="vpn-open-api-bar">
+                <span class="pref-label">开放给 AI 的 VPN 专用接口（点击复制）：</span>
+                <div class="feature-tags">
+                  <button class="tool-pill" data-copy-cmd="vpn_get_profiles" type="button">vpn_get_profiles</button>
+                  <button class="tool-pill" data-copy-cmd="vpn_backup_create" type="button">vpn_backup_create</button>
+                  <button class="tool-pill" data-copy-cmd="vpn_update_profile" type="button">vpn_update_profile</button>
+                  <button class="tool-pill" data-copy-cmd="vpn_delete_profile" type="button">vpn_delete_profile</button>
+                  <button class="tool-pill" data-copy-cmd="vpn_restore_backup" type="button">vpn_restore_backup</button>
+                </div>
+              </div>
+
+              <div class="vpn-path-line">
+                <span>档案路径</span>
+                <code id="vpn-profiles-path">~/.config/gador/vpn/profiles.json</code>
+              </div>
+
+              <div class="vpn-list" id="vpn-profile-list"></div>
+            </article>
+
+            <!-- Right: Mandatory Pre-Modify Backup Zone + Quick Delete Space -->
+            <article class="glass-card spotlight-card">
+              <div class="card-head">
+                <div>
+                  <span class="card-kicker">MANDATORY BACKUP &amp; QUICK DELETE · 备份与快捷清理区</span>
+                  <h2>VPN 备份区与快捷删除</h2>
+                </div>
+                <div class="vpn-backup-head-actions">
+                  <button class="btn ghost xs" id="vpn-btn-manual-backup" type="button">+ 立即备份</button>
+                  <button class="btn danger-soft xs" id="vpn-btn-clear-backups" type="button" title="一键清空备份区全部历史备份">清空备份</button>
+                </div>
+              </div>
+              <p class="card-desc">AI 或用户每次修改/删除 VPN 档案前都会在此自动留存完整 JSON 快照。支持一键还原任意版本，或随时点击右侧删除键清理冗余备份。</p>
+
+              <div class="vpn-path-line">
+                <span>备份目录</span>
+                <code id="vpn-backups-path">~/.config/gador/vpn/backups/</code>
+              </div>
+
+              <div class="vpn-list" id="vpn-backup-list"></div>
+            </article>
+          </div>
+        </div>
+
+        <!-- VIEW 5: Dedicated Personalization Studio (个性化主展示专区) -->
+        <div class="hub-surface view-pane hidden" id="view-personalization" data-view-pane="personalization">
+          <header class="hub-header">
+            <div class="hub-title-group">
+              <span class="hub-kicker">PERSONALIZATION STUDIO · 核心主展示</span>
+              <h1>个性化光场与界面美学</h1>
+              <p>自由定制 Gador 的磨砂质感、光效主题色、日夜间外观以及 Zen 侧边栏 / Chrome 顶部融合布局，所见即所得。</p>
+            </div>
+            <div class="hub-actions">
+              <button class="btn ghost" id="btn-reset-personal" type="button">恢复默认光效</button>
+              <button class="btn ghost" data-back-page type="button">返回页面</button>
+            </div>
+          </header>
+
+          <div class="hub-grid cols-2">
+            <!-- 1. Theme Mode: System / Light / Dark -->
+            <article class="glass-card spotlight-card">
+              <div class="card-head">
+                <div>
+                  <span class="card-kicker">APPEARANCE MODE</span>
+                  <h2>外观与日夜间模式</h2>
+                </div>
+                <span class="status-pill" id="pref-theme-label">跟随系统</span>
+              </div>
+              <p class="card-desc">日间模式采用高透冰晶磨砂玻璃与柔和日光晕；夜间模式采用深邃黑曜石磨砂与高对比霓虹边缘光。</p>
+              <div class="theme-picker" role="radiogroup" aria-label="外观模式">
+                <button class="theme-card" data-set-theme="system" type="button">
+                  <span class="theme-preview preview-system"><i></i><i></i></span>
+                  <strong>跟随系统</strong>
+                  <small>自动同步桌面主题</small>
+                </button>
+                <button class="theme-card" data-set-theme="light" type="button">
+                  <span class="theme-preview preview-light"><i></i></span>
+                  <strong>日间模式</strong>
+                  <small>冰晶磨砂 · 清透光场</small>
+                </button>
+                <button class="theme-card" data-set-theme="dark" type="button">
+                  <span class="theme-preview preview-dark"><i></i></span>
+                  <strong>夜间模式</strong>
+                  <small>黑曜石磨砂 · 深邃光晕</small>
+                </button>
+              </div>
+            </article>
+
+            <!-- 2. Light Accent Color Palette + Custom Color Picker -->
+            <article class="glass-card spotlight-card">
+              <div class="card-head">
+                <div>
+                  <span class="card-kicker">OPTICAL ACCENT COLOR</span>
+                  <h2>光效主题色</h2>
+                </div>
+                <span class="status-pill" id="pref-accent-label">自适应状态</span>
+              </div>
+              <p class="card-desc">选择全局环境光球、1px 边缘反光与交互高光的色系，或使用自定义取色器调制专属光色。</p>
+              <div class="swatch-grid" id="accent-swatches">
+                <button class="swatch-btn" data-set-accent="adaptive" type="button">
+                  <span class="swatch-orb" style="--sw1:#4f8dff;--sw2:#22d3ee;--sw3:#b061ff"></span>
+                  <span>自适应</span>
+                </button>
+                <button class="swatch-btn" data-set-accent="cyan" type="button">
+                  <span class="swatch-orb" style="--sw1:#38bdf8;--sw2:#2dd4bf;--sw3:#6366f1"></span>
+                  <span>极光青</span>
+                </button>
+                <button class="swatch-btn" data-set-accent="sapphire" type="button">
+                  <span class="swatch-orb" style="--sw1:#4f8dff;--sw2:#60a5fa;--sw3:#818cf8"></span>
+                  <span>冰川蓝</span>
+                </button>
+                <button class="swatch-btn" data-set-accent="violet" type="button">
+                  <span class="swatch-orb" style="--sw1:#a855f7;--sw2:#f472b6;--sw3:#6366f1"></span>
+                  <span>星云紫</span>
+                </button>
+                <button class="swatch-btn" data-set-accent="amber" type="button">
+                  <span class="swatch-orb" style="--sw1:#f59e0b;--sw2:#fb7185;--sw3:#a855f7"></span>
+                  <span>日落琥珀</span>
+                </button>
+                <button class="swatch-btn" data-set-accent="emerald" type="button">
+                  <span class="swatch-orb" style="--sw1:#10b981;--sw2:#22d3ee;--sw3:#3b82f6"></span>
+                  <span>翡翠光</span>
+                </button>
+                <button class="swatch-btn" data-set-accent="rose" type="button">
+                  <span class="swatch-orb" style="--sw1:#fb7185;--sw2:#c084fc;--sw3:#fbbf24"></span>
+                  <span>玫瑰霓虹</span>
+                </button>
+              </div>
+              <div class="custom-color-row">
+                <label class="custom-color-picker">
+                  <input type="color" id="custom-accent-input" value="#38bdf8" aria-label="自定义光效主色" />
+                  <span class="custom-color-meta">
+                    <strong>自定义光效主色</strong>
+                    <small id="custom-accent-hex">#38BDF8 · 点击调色板实时渲染光场</small>
+                  </span>
+                </label>
+                <button class="btn ghost xs" id="btn-apply-custom-color" type="button">应用自定义色</button>
+              </div>
+            </article>
+
+            <!-- 3. Interface Layout Selection (Zen Sidebar vs Chrome Horizontal × Light) -->
+            <article class="glass-card spotlight-card">
+              <div class="card-head">
+                <div>
+                  <span class="card-kicker">INTERFACE LAYOUT</span>
+                  <h2>界面布局模式</h2>
+                </div>
+                <span class="status-pill" id="pref-layout-label">Zen 侧边栏</span>
+              </div>
+              <p class="card-desc">在 Zen 极简竖向侧边栏与 Chrome 顶部横向标签栏（融合磨砂光效）间无缝切换，也可随时按 <kbd>Alt</kbd> <kbd>L</kbd> 切换。</p>
+              <div class="layout-picker">
+                <button class="layout-card" data-set-layout="sidebar" type="button">
+                  <div class="wireframe wf-sidebar" aria-hidden="true">
+                    <span class="wf-sb"><i></i><i></i><i></i></span>
+                    <span class="wf-main"></span>
+                  </div>
+                  <strong>Zen 竖向侧边栏</strong>
+                  <small>宽阔纵向工作空间 · 沉浸式光场侧栏</small>
+                </button>
+                <button class="layout-card" data-set-layout="chrome" type="button">
+                  <div class="wireframe wf-chrome" aria-hidden="true">
+                    <span class="wf-top"><i></i><i></i><i></i></span>
+                    <span class="wf-bar"></span>
+                    <span class="wf-main"></span>
+                  </div>
+                  <strong>Chrome 顶部栏 × 光效</strong>
+                  <small>经典横向标签与胶囊地址栏 · 融合流光磨砂</small>
+                </button>
+              </div>
+              <label class="switch pref-switch">
+                <input type="checkbox" id="pref-compact-toggle" />
+                <span>Zen 侧边栏紧凑模式（自动隐藏，鼠标贴近左边缘唤出 · Ctrl+B）</span>
+              </label>
+            </article>
+
+            <!-- 4. Optical Lightfield & Optional Frosted Glass Intensity -->
+            <article class="glass-card spotlight-card">
+              <div class="card-head">
+                <div>
+                  <span class="card-kicker">OPTICS &amp; OPTIONAL FROST</span>
+                  <h2>光场强度与可选磨砂</h2>
+                </div>
+                <span class="status-pill" id="pref-frost-label">纯净光效</span>
+              </div>
+              <div class="pref-group">
+                <span class="pref-label">磨砂玻璃（可选，默认纯净光效不强制磨砂）</span>
+                <div class="segmented" role="group" aria-label="磨砂强度">
+                  <button class="seg-btn active" data-set-frost="off" type="button">关闭 (纯净光效)</button>
+                  <button class="seg-btn" data-set-frost="soft" type="button">轻盈</button>
+                  <button class="seg-btn" data-set-frost="standard" type="button">标准</button>
+                  <button class="seg-btn" data-set-frost="rich" type="button">浓郁</button>
+                </div>
+              </div>
+              <div class="pref-group">
+                <span class="pref-label">环境光场亮度</span>
+                <div class="segmented" role="group" aria-label="光场亮度">
+                  <button class="seg-btn" data-set-glow="subtle" type="button">柔和</button>
+                  <button class="seg-btn active" data-set-glow="standard" type="button">标准</button>
+                  <button class="seg-btn" data-set-glow="vivid" type="button">璀璨</button>
+                </div>
+              </div>
+              <div class="optics-preview" id="optics-preview">
+                <img src="/icon.svg" alt="" width="44" height="44" />
+                <div>
+                  <strong>Gador Optical Lightfield</strong>
+                  <p>当前光场与表面质感实时联动预览</p>
+                </div>
+              </div>
+            </article>
+          </div>
+        </div>
+
+        <!-- VIEW 6: Gador-Specialized Settings (Gador 专属设置页) -->
+        <div class="hub-surface view-pane hidden" id="view-settings" data-view-pane="settings">
+          <header class="hub-header">
+            <div class="hub-title-group">
+              <span class="hub-kicker">GADOR SETTINGS · 浏览器专属配置</span>
+              <h1>Gador 专属设置</h1>
+              <p>围绕 AI 守护内核、默认 AgentSpace、隐私安全围栏与快捷入口定制，摒弃冗余的传统浏览器菜单。</p>
+            </div>
+            <div class="hub-actions">
+              <button class="btn ghost" id="settings-btn-refresh" type="button">同步内核状态</button>
+              <button class="btn ghost" data-back-page type="button">返回页面</button>
+            </div>
+          </header>
+
+          <!-- Google Account & Essential Native Browser Features (Human-Only, Physically Isolated from AI) -->
+          <div class="hub-grid cols-2">
+            <article class="glass-card spotlight-card">
+              <div class="card-head">
+                <div>
+                  <span class="card-kicker">GOOGLE ACCOUNT &amp; SYNC · 账户中心</span>
+                  <h2>Google 账户与个人同步</h2>
+                </div>
+                <span class="status-pill ok">仅限本人操作</span>
+              </div>
+              <p class="card-desc">使用你的 Google 账户登录以同步书签、扩展与个人配置。AI 共享空间可复用你的网站登录态，但绝无法读取你的账户密码库或修改同步设置。</p>
+              <div class="account-actions">
+                <button class="btn glow" data-open-native="https://accounts.google.com" type="button">登录 / 管理 Google 账户</button>
+                <button class="btn ghost" data-open-native="chrome://settings/syncSetup" type="button">同步与 Google 服务</button>
+                <button class="btn ghost" data-open-native="chrome://settings/people" type="button">个人资料管理</button>
+              </div>
+            </article>
+
+            <article class="glass-card spotlight-card">
+              <div class="card-head">
+                <div>
+                  <span class="card-kicker">ESSENTIAL BROWSER TOOLS · 仅限本人</span>
+                  <h2>浏览器基础功能与个人资产</h2>
+                </div>
+                <span class="status-pill warm">AI 物理不可达</span>
+              </div>
+              <p class="card-desc">完整保留日常必需的搜索引擎、网站权限、下载、字体、性能、插件商店、密码库、付款方式、书签与历史记录，点击后直接在本机原生 Gador 窗口中安全打开。</p>
+              <div class="native-tools-grid">
+                <button class="btn ghost xs" data-open-native="chrome://history" type="button">历史记录 (Ctrl+H)</button>
+                <button class="btn ghost xs" data-open-native="chrome://bookmarks" type="button">书签管理器</button>
+                <button class="btn ghost xs" data-open-native="chrome://downloads" type="button">下载内容 (Ctrl+J)</button>
+                <button class="btn ghost xs" data-open-native="chrome://extensions" type="button">扩展与插件管理</button>
+                <button class="btn ghost xs" data-open-native="https://chromewebstore.google.com" type="button">Chrome 插件商店</button>
+                <button class="btn ghost xs" data-open-native="chrome://extensions/shortcuts" type="button">插件快捷键</button>
+                <button class="btn ghost xs" data-open-native="chrome://settings/search" type="button">搜索引擎</button>
+                <button class="btn ghost xs" data-open-native="chrome://settings/onStartup" type="button">启动时打开</button>
+                <button class="btn ghost xs" data-open-native="chrome://settings/defaultBrowser" type="button">默认浏览器</button>
+                <button class="btn ghost xs" data-open-native="chrome://settings/content" type="button">网站权限管理</button>
+                <button class="btn ghost xs" data-open-native="chrome://settings/downloads" type="button">下载保存路径</button>
+                <button class="btn ghost xs" data-open-native="chrome://settings/appearance" type="button">外观与缩放</button>
+                <button class="btn ghost xs" data-open-native="chrome://settings/fonts" type="button">字体设置</button>
+                <button class="btn ghost xs" data-open-native="chrome://settings/performance" type="button">性能与内存</button>
+                <button class="btn ghost xs" data-open-native="chrome://settings/system" type="button">系统与硬件加速</button>
+                <button class="btn ghost xs" data-open-native="chrome://settings/languages" type="button">语言设置</button>
+                <button class="btn ghost xs" data-open-native="chrome://password-manager/passwords" type="button">密码管理器</button>
+                <button class="btn ghost xs" data-open-native="chrome://settings/payments" type="button">付款方式</button>
+                <button class="btn ghost xs" data-open-native="chrome://settings/addresses" type="button">地址与自动填充</button>
+                <button class="btn ghost xs" data-open-native="chrome://settings/privacy" type="button">隐私与安全</button>
+                <button class="btn ghost xs" data-open-native="chrome://settings/clearBrowserData" type="button">清除浏览记录</button>
+              </div>
+            </article>
+          </div>
+
+          <!-- Fast Jump Cards to the 3 Core Hubs -->
+          <div class="hub-grid cols-3 settings-jumps">
+            <button class="glass-card jump-card" data-nav-view="personalization" type="button">
+              <span class="card-kicker">PERSONALIZATION</span>
+              <strong>个性化光效与布局 →</strong>
+              <p>主题色、日夜间模式、磨砂强度、Zen / Chrome 界面切换</p>
+            </button>
+            <button class="glass-card jump-card" data-nav-view="ai" type="button">
+              <span class="card-kicker">AI AGENT HUB</span>
+              <strong>AI 中枢与密码/支付围栏 →</strong>
+              <p>控制权接管、密码支付硬拦截、MCP / CLI、事件流</p>
+            </button>
+            <button class="glass-card jump-card" data-nav-view="vpn" type="button">
+              <span class="card-kicker">INDEPENDENT VPN</span>
+              <strong>独立 VPN 防泄漏中心 →</strong>
+              <p>脱离系统代理、WebRTC 保护、Fail-Closed 熔断</p>
+            </button>
+          </div>
+
+          <!-- Bookmarks + Startup / Initialization Settings + About Gador -->
+          <div class="hub-grid cols-2">
+            <!-- Bookmarks Management -->
+            <article class="glass-card spotlight-card">
+              <div class="card-head">
+                <div>
+                  <span class="card-kicker">BOOKMARKS · 书签中心</span>
+                  <h2>书签与书签栏</h2>
+                </div>
+                <span class="status-pill ok">原生同步</span>
+              </div>
+              <p class="card-desc">直接控制原生 Gador 浏览器的书签栏显示，或一键打开书签管理器与导入外部浏览器书签。</p>
+              <label class="switch pref-switch">
+                <input type="checkbox" id="settings-bookmark-bar-toggle" checked />
+                <span>在原生浏览器顶部常驻显示书签栏</span>
+              </label>
+              <div class="account-actions">
+                <button class="btn glow xs" data-open-native="chrome://bookmarks" type="button">打开书签管理器</button>
+                <button class="btn ghost xs" data-open-native="chrome://settings/importData" type="button">导入书签与设置</button>
+              </div>
+            </article>
+
+            <!-- Startup & Initialization / Reset Settings -->
+            <article class="glass-card spotlight-card">
+              <div class="card-head">
+                <div>
+                  <span class="card-kicker">INITIALIZATION &amp; STARTUP · 初始化设置</span>
+                  <h2>初始化与恢复默认</h2>
+                </div>
+                <span class="status-pill">热更新无需重编译</span>
+              </div>
+              <p class="card-desc">一键初始化 Gador 原生布局（竖向侧边栏 / 顶部栏）、书签栏、光效主题色与 AI 边缘光晕，实时写入 <code>~/.config/gador/native-ui.json</code> 立即生效。</p>
+              <div class="account-actions">
+                <button class="btn glow xs" id="btn-init-zen-preset" type="button">初始化为 Zen 竖向布局</button>
+                <button class="btn ghost xs" id="btn-init-chrome-preset" type="button">初始化为 Chrome 顶部布局</button>
+                <button class="btn danger-soft xs" id="btn-reset-all-init" type="button">恢复全部默认设置</button>
+                <button class="btn ghost xs" data-open-native="chrome://settings/reset" type="button">原生核心重置</button>
+              </div>
+            </article>
+          </div>
+
+          <div class="hub-grid cols-2">
+            <!-- About Gador & Engine Diagnostics -->
+            <article class="glass-card spotlight-card skill-card-span">
+              <div class="card-head">
+                <div>
+                  <span class="card-kicker">ABOUT GADOR · 关于 Gador</span>
+                  <h2>关于 Gador 与内核信息</h2>
+                </div>
+                <div class="account-actions">
+                  <span class="status-pill ok" id="settings-conn-pill">在线</span>
+                  <button class="btn ghost xs" data-open-native="chrome://version" type="button">查看完整引擎版本</button>
+                </div>
+              </div>
+              <p class="card-desc">Gador 是基于 Chromium 158 洁净室改造的 AI-Agent 原生浏览器：原生单层 C++ Views 窗口 + 热更新 UI 模块架构（改主题/布局/光效/VPN 无需重新编译）+ 密码与支付内核硬围栏。</p>
+              <dl class="kv-list">
+                <div><dt>Gador 引擎版本</dt><dd id="set-engine-ver">—</dd></div>
+                <div><dt>运行模式</dt><dd id="set-runtime-mode">—</dd></div>
+                <div><dt>无头 AI 守护默认窗口</dt><dd id="set-window-default">—</dd></div>
+                <div><dt>控制协议版本</dt><dd id="set-proto-ver">—</dd></div>
+                <div><dt>原生热更新配置</dt><dd id="set-native-ui-path">~/.config/gador/native-ui.json</dd></div>
+                <div><dt>控制面权限</dt><dd>POSIX UDS 0600 + SO_PEERCRED 同 UID 鉴权</dd></div>
+              </dl>
+              <div class="feature-tags" id="set-feature-tags"></div>
+            </article>
+          </div>
+        </div>
+
+        <!-- Floating bottom control capsule (visible in Page view when AI page is active) -->
+        <div class="capsule" id="capsule" role="toolbar" aria-label="控制">
+          <button class="cap-btn" id="btn-capsule-back" type="button" title="回退上一页">← 回退</button>
+          <span class="ai-beacon xs" id="capsule-ai-beacon" aria-hidden="true"><i></i></span>
+          <span class="capsule-state" id="control-state">空闲</span>
+          <span class="capsule-sep" aria-hidden="true"></span>
+          <button class="cap-btn danger" id="btn-stop-ai" type="button" title="立即停止 AI 操作">■ 停止</button>
+          <button class="cap-btn" id="btn-capture" type="button" title="抓取一帧">画面</button>
+          <button class="cap-btn" id="btn-live" type="button" aria-pressed="true" title="实时刷新画面">实时</button>
+          <button class="cap-btn warm" id="btn-takeover" type="button">接管</button>
+          <button class="cap-btn" id="btn-collapse" type="button" title="收起到后台静默执行">收起</button>
+          <button class="cap-btn" id="btn-capsule-settings" type="button" title="返回 Gador 设置 / VPN / 个性化">返回设置</button>
+        </div>
+
+        <!-- Warm-lit non-blocking JS dialog card -->
+        <div class="dialog-card hidden" id="dialog-card" role="alertdialog" aria-labelledby="dialog-type" aria-describedby="dialog-msg">
+          <span class="dialog-type" id="dialog-type">PROMPT</span>
+          <p class="dialog-msg" id="dialog-msg"></p>
+          <input id="dialog-input" type="text" autocomplete="off" aria-label="对话框输入" />
+          <div class="dialog-actions">
+            <button class="btn ghost" id="btn-dialog-dismiss" type="button">取消</button>
+            <button class="btn glow" id="btn-dialog-accept" type="button">确定</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Legacy floating sheets kept hidden-compatible for quick shortcuts -->
+    <section class="sheet hidden" id="sheet-network" aria-label="独立网络快捷面板">
+      <header>
+        <h3>独立网络</h3>
+        <span class="chip" id="os-proxy-chip">系统代理已隔离</span>
+        <button class="icon-btn sm" type="button" data-close-sheet aria-label="关闭">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 4.5 7 7m0-7-7 7"/></svg>
+        </button>
+      </header>
+      <form class="vpn-form" id="vpn-form">
+        <label class="field">
+          <span>作用域</span>
+          <input type="text" id="vpn-scope" value="browser" placeholder="browser 或 space:sp_1" autocomplete="off" />
+        </label>
+        <div class="field">
+          <span>路由模式</span>
+          <div class="segmented" role="radiogroup" aria-label="路由模式">
+            <label><input type="radio" name="vpn-mode" value="strict_tunnel" checked /><span>严格隧道</span></label>
+            <label><input type="radio" name="vpn-mode" value="direct_only" /><span>直连</span></label>
+            <label><input type="radio" name="vpn-mode" value="custom" /><span>自定义</span></label>
+          </div>
+        </div>
+        <label class="field">
+          <span>隧道端点</span>
+          <input type="text" id="vpn-endpoint" placeholder="socks5://127.0.0.1:7890" autocomplete="off" />
+        </label>
+        <label class="field">
+          <span>DoH（可选）</span>
+          <input type="text" id="vpn-doh" placeholder="https://dns.quad9.net/dns-query" autocomplete="off" />
+        </label>
+        <label class="switch">
+          <input type="checkbox" id="vpn-fail-closed" checked />
+          <span>Fail-Closed：断开即阻断，绝不回退直连</span>
+        </label>
+        <button type="submit" class="btn glow full">应用出口策略</button>
+      </form>
+      <div class="routes" id="route-list"></div>
+    </section>
+
+    <section class="sheet hidden" id="sheet-activity" aria-label="内核事件">
+      <header>
+        <h3>内核事件</h3>
+        <button class="btn ghost xs" id="btn-clear-events" type="button">清空</button>
+        <button class="icon-btn sm" type="button" data-close-sheet aria-label="关闭">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 4.5 7 7m0-7-7 7"/></svg>
+        </button>
+      </header>
+      <ol class="events" id="event-log"></ol>
+    </section>
+
+    <!-- Floating URL bar (Zen-style) -->
+    <div class="urlbar-scrim hidden" id="urlbar">
+      <form class="urlbar" id="urlbar-form" role="search">
+        <div class="urlbar-row">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
+          <input id="urlbar-input" type="text" autocomplete="off" spellcheck="false" placeholder="输入网址、搜索，或跳转到已打开的页面" aria-label="网址" aria-controls="suggestions" />
+        </div>
+        <ul class="suggestions" id="suggestions" role="listbox" aria-label="已打开的页面"></ul>
+        <div class="urlbar-hint">
+          <span id="urlbar-target"></span>
+          <span><kbd>Enter</kbd> 原生打开 · <kbd>Shift+Enter</kbd> AI 空间打开 · <kbd>Esc</kbd> 关闭</span>
+        </div>
+      </form>
+    </div>
+
+    <div class="toasts" id="toasts" aria-live="polite"></div>
+  </div>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+diff --git a/ui/ozone/platform/wayland/host/wayland_screen.cc b/ui/ozone/platform/wayland/host/wayland_screen.cc
+--- a/ui/ozone/platform/wayland/host/wayland_screen.cc
++++ b/ui/ozone/platform/wayland/host/wayland_screen.cc
+@@ -386,7 +386,9 @@ gfx::Point WaylandScreen::GetCursorScreenPoint() const {
+ 
+   // Otherwise, make sure the returned point does not overlap any known window.
+   auto* window = connection_->window_manager()->GetWindowWithLargestBounds();
+-  DCHECK(window);
++  if (!window) {
++    return gfx::Point(-1, -1);
++  }
+   const gfx::Rect bounds = window->GetBoundsInDIP();
+   return gfx::Point(bounds.width() + 10, bounds.height() + 10);
+ }

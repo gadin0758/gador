@@ -1,0 +1,19 @@
+--- a/chrome/browser/chrome_browser_main.cc
++++ b/chrome/browser/chrome_browser_main.cc
+@@ -163,6 +163,7 @@
+ #include "chrome/browser/apps/app_service/publishers/publisher_host_factory_impl.h"
+ #include "chrome/browser/child_module/child_module_paths.h"
+ #include "chrome/browser/child_module/features.h"
++#include "chrome/browser/agent_kernel/agent_ipc_server.h"
+ #include "chrome/browser/headless/chrome_browser_main_extra_parts_headless.h"
+ #include "chrome/browser/profiles/delete_profile_helper.h"
+ #include "chrome/browser/resource_coordinator/tab_manager.h"
+@@ -852,6 +853,8 @@
+ #if !BUILDFLAG(IS_ANDROID)
+   main_parts->AddParts(
+       std::make_unique<headless::ChromeBrowserMainExtraPartsHeadless>());
++  main_parts->AddParts(
++      std::make_unique<agent_kernel::ChromeBrowserMainExtraPartsAgentKernel>());
+ #endif
+ 
+ #if BUILDFLAG(CHROME_FOR_TESTING)

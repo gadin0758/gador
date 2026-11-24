@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Gador</title>
+  <style>
+    :root {
+      color-scheme: dark light;
+      --bg: #080b14;
+      --card: rgba(255, 255, 255, 0.055);
+      --edge: rgba(255, 255, 255, 0.12);
+      --ink: #eef2ff;
+      --ink-2: rgba(238, 242, 255, 0.66);
+      --accent: #7d98ff;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #eef2fc;
+        --card: rgba(255, 255, 255, 0.78);
+        --edge: rgba(18, 23, 38, 0.1);
+        --ink: #121726;
+        --ink-2: rgba(18, 23, 38, 0.64);
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 28px;
+      background:
+        radial-gradient(60% 50% at 15% 10%, rgba(125, 152, 255, 0.24), transparent 65%),
+        radial-gradient(50% 45% at 88% 85%, rgba(168, 85, 247, 0.18), transparent 65%),
+        var(--bg);
+      color: var(--ink);
+      font: 14px/1.5 "Inter", "PingFang SC", "Noto Sans CJK SC", system-ui, sans-serif;
+    }
+    .wrap {
+      width: min(680px, 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 22px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand-mark {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      font: 800 22px/1 "Inter", system-ui, sans-serif;
+      color: #fff;
+      background: linear-gradient(135deg, #4f8dff, #8b5cf6);
+      box-shadow: 0 0 28px -4px rgba(125, 152, 255, 0.85);
+    }
+    .brand h1 { margin: 0; font-size: 26px; letter-spacing: 0.03em; }
+    .search {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px 8px 16px;
+      border-radius: 999px;
+      background: var(--card);
+      border: 1px solid var(--edge);
+      box-shadow: 0 18px 46px -24px rgba(79, 141, 255, 0.45);
+    }
+    .search input {
+      flex: 1;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: var(--ink);
+      font: 15px/1.4 inherit;
+    }
+    .search button {
+      border: 0;
+      border-radius: 999px;
+      padding: 9px 18px;
+      font: 600 13px/1 inherit;
+      color: #fff;
+      background: linear-gradient(135deg, #4f8dff, #7d98ff);
+      cursor: pointer;
+    }
+    .engines {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px;
+      border-radius: 999px;
+      background: var(--card);
+      border: 1px solid var(--edge);
+    }
+    .engine-pill {
+      border: 0;
+      border-radius: 999px;
+      padding: 6px 13px;
+      font: 500 12.5px/1 inherit;
+      color: var(--ink-2);
+      background: transparent;
+      cursor: pointer;
+      transition: background 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+    }
+    .engine-pill:hover {
+      color: var(--ink);
+    }
+    .engine-pill.active {
+      color: #fff;
+      background: linear-gradient(135deg, #4f8dff, #7d98ff);
+      box-shadow: 0 4px 14px -4px rgba(79, 141, 255, 0.75);
+    }
+    .ai-strip {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: var(--card);
+      border: 1px solid rgba(125, 152, 255, 0.42);
+      box-shadow: 0 0 24px -8px rgba(125, 152, 255, 0.7);
+    }
+    .ai-strip.visible { display: inline-flex; }
+    .beacon {
+      position: relative; width: 22px; height: 22px; display: inline-grid; place-items: center;
+    }
+    .beacon::before {
+      content: ""; position: absolute; inset: 0; border-radius: 50%;
+      background: radial-gradient(circle, rgba(125,152,255,0.42), transparent 72%);
+    }
+    .beacon > i {
+      width: 8px; height: 8px; border-radius: 50%; position: relative; z-index: 1;
+      background: radial-gradient(circle, #fff 0%, #eef3ff 35%, #7d98ff 82%);
+      box-shadow: 0 0 10px 2px rgba(125,152,255,0.75);
+    }
+    .links {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .chip {
+      border: 1px solid var(--edge);
+      background: var(--card);
+      color: var(--ink);
+      padding: 9px 15px;
+      border-radius: 999px;
+      font: 500 12.5px/1 inherit;
+      cursor: pointer;
+      text-decoration: none;
+      transition: transform 0.16s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .chip:hover {
+      transform: translateY(-1px);
+      border-color: rgba(125, 152, 255, 0.55);
+      box-shadow: 0 0 20px -8px rgba(125, 152, 255, 0.65);
+    }
+    .btn-stop {
+      border: 0;
+      border-radius: 999px;
+      padding: 6px 12px;
+      font: 600 12px/1 inherit;
+      cursor: pointer;
+      background: rgba(255, 93, 115, 0.22);
+      color: #ff6b81;
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <div class="brand">
+      <span class="brand-mark">R</span>
+      <h1>Gador</h1>
+    </div>
+
+    <div class="engines" id="engine-bar" role="radiogroup" aria-label="选择搜索引擎">
+      <button class="engine-pill active" type="button" data-engine="google">Google</button>
+      <button class="engine-pill" type="button" data-engine="bing">Bing</button>
+      <button class="engine-pill" type="button" data-engine="baidu">百度</button>
+      <button class="engine-pill" type="button" data-engine="duckduckgo">DuckDuckGo</button>
+    </div>
+
+    <form class="search" id="search-form">
+      <input id="search-input" type="text" placeholder="使用 Google 搜索，或输入网址直接浏览…" autocomplete="off" autofocus />
+      <button type="submit">前往</button>
+    </form>
+
+    <div class="ai-strip" id="ai-strip">
+      <span class="beacon" id="ai-beacon"><i></i></span>
+      <span id="ai-label">AI 正在操作原生标签</span>
+      <button class="btn-stop" id="btn-stop" type="button">■ 停止 AI</button>
+      <button class="chip" data-open-hash="ai" type="button" style="padding:6px 11px">标签总览</button>
+    </div>
+
+    <nav class="links" aria-label="Gador 快捷入口">
+      <button class="chip" data-open-hash="settings" type="button">Gador 融合设置</button>
+      <button class="chip" data-open-hash="ai" type="button">标签总览与 AI</button>
+      <button class="chip" data-open-hash="vpn" type="button">独立 VPN 与备份</button>
+      <button class="chip" id="btn-incognito" type="button">打开隐私窗口</button>
+    </nav>
+  </main>
+  <script src="newtab.js"></script>
+</body>
+</html>

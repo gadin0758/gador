@@ -1,0 +1,70 @@
+# Copyright 2026 gador Authors.
+# Clean-room Chromium 158 GN target for chrome/browser/agent_kernel/.
+
+import("//build/config/ui.gni")
+
+source_set("agent_kernel") {
+  sources = [
+    "agent_cdp_bridge.cc",
+    "agent_cdp_bridge.h",
+    "agent_ipc_server.cc",
+    "agent_ipc_server.h",
+    "agent_offscreen_host.cc",
+    "agent_offscreen_host.h",
+    "agent_space_manager.cc",
+    "agent_space_manager.h",
+    "agent_web_contents_delegate.cc",
+    "agent_web_contents_delegate.h",
+    "core/kernel_state.cc",
+    "core/kernel_state.h",
+    "core/protocol_framing.cc",
+    "core/protocol_framing.h",
+    "core/rpc_router.cc",
+    "core/rpc_router.h",
+    "core/security_guard.cc",
+    "core/security_guard.h",
+    "core/uds_posix_server.cc",
+    "core/uds_posix_server.h",
+    "network_tunnel_provider.cc",
+    "network_tunnel_provider.h",
+    "ui/agent_dock_button.cc",
+    "ui/agent_dock_button.h",
+    "ui/agent_space_window.cc",
+    "ui/agent_space_window.h",
+    "ui/gador_ai_aura_overlay.cc",
+    "ui/gador_ai_aura_overlay.h",
+    "ui/gador_native_ui_config.cc",
+    "ui/gador_native_ui_config.h",
+    "ui/gador_toolbar_controls.cc",
+    "ui/gador_toolbar_controls.h",
+  ]
+
+  public_deps = [
+    "//base",
+    "//cc/paint",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/themes",
+    "//chrome/common:constants",
+    "//components/bookmarks/common",
+    "//components/keep_alive_registry",
+    "//components/keyed_service/core",
+    "//components/prefs",
+    "//content/public/browser",
+    "//mojo/public/cpp/bindings",
+    "//net",
+    "//services/network/public/mojom",
+    "//skia",
+    "//ui/compositor",
+    "//ui/events",
+    "//ui/views",
+    "//ui/views/controls/webview",
+  ]
+
+  if (use_aura) {
+    public_deps += [
+      "//ui/aura",
+      "//ui/base/ime",
+      "//ui/compositor",
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "gador": {
+      "command": "node",
+      "args": [
+        "${PLUGIN_ROOT}/../mcp-server/index.mjs"
+      ],
+      "env": {}
+    }
+  }
+}
