@@ -82,6 +82,7 @@ const state = {
   },
   modulesState: { registryPath: "", installRoot: "", passphraseEnabled: false, modules: [] },
   customSettingsPanels: [],
+  activeModuleSubmenu: {},
   busyOps: {},
   skillInfo: null,
   vpnForm: {
@@ -1249,8 +1250,11 @@ function renderAiView(root) {
 
 function renderModuleCustomSettingsCards(root, targetSlot = null) {
   const panels = (state.customSettingsPanels || []).filter((panel) => {
-    if (!Array.isArray(panel.schema) || panel.schema.length === 0) return false;
+    const hasSchema = Array.isArray(panel.schema) && panel.schema.length > 0;
+    const hasSubmenus = Array.isArray(panel.submenus) && panel.submenus.length > 0;
+    if (!hasSchema && !hasSubmenus) return false;
     if (!targetSlot) return true;
+    if (hasSubmenus && !hasSchema) return targetSlot === "ai";
     return panel.schema.some((f) => (f.slot || "ai") === targetSlot);
   });
   if (panels.length === 0) return;
@@ -1258,15 +1262,19 @@ function renderModuleCustomSettingsCards(root, targetSlot = null) {
   root.appendChild(
     el("div", {
       class: "gd-section-label",
-      text: "已加入模块的自定义设置（按模块功能动态授权）",
+      text: "已加入模块的自定义设置与二级菜单（按模块功能动态授权）",
     })
   );
 
   for (const panel of panels) {
+    const allFields = Array.isArray(panel.schema) ? panel.schema : [];
     const fields = targetSlot
-      ? panel.schema.filter((f) => (f.slot || "ai") === targetSlot)
-      : panel.schema;
-    if (fields.length === 0) continue;
+      ? allFields.filter((f) => (f.slot || "ai") === targetSlot)
+      : allFields;
+    const fieldByKey = new Map(allFields.map((f) => [f.key, f]));
+    const submenus = Array.isArray(panel.submenus) ? panel.submenus : [];
+    if (fields.length === 0 && submenus.length === 0) continue;
+
     const busyKey = `custom-settings:${panel.moduleId}`;
     const isBusy = Boolean(state.busyOps[busyKey]);
 
@@ -1290,51 +1298,31 @@ function renderModuleCustomSettingsCards(root, targetSlot = null) {
       }
     };
 
-    const rows = [
-      el("div", { class: "gd-item" }, [
-        el("div", { class: "gd-item-info" }, [
-          el("strong", { text: `${panel.moduleName}（${panel.moduleId} v${panel.version}）` }),
-          el("span", {
-            text: panel.description || "以下自定义设置项由该已启用模块的功能清单动态开放。",
-          }),
-        ]),
-        el("div", { class: "gd-actions" }, [
-          isBusy
-            ? el("span", { class: "gd-pill waiting", text: "⏳ 同步设置中…" })
-            : el("span", { class: "gd-pill ok", text: `已授权 ${fields.length} 项` }),
-          el("button", {
-            type: "button",
-            class: "gd-btn",
-            disabled: isBusy ? true : undefined,
-            text: isBusy ? "⏳ 等待中…" : "恢复默认",
-            onClick: async () => {
-              if (state.busyOps[busyKey]) return;
-              state.busyOps[busyKey] = true;
-              renderGadorPanel();
-              try {
-                await apiDelete(`/api/modules/${encodeURIComponent(panel.moduleId)}/settings`);
-                await refreshAllData();
-                showToast(`已恢复模块「${panel.moduleName}」默认自定义设置`);
-              } catch (e) {
-                showToast(`重置失败：${e.message}`, true);
-              } finally {
-                delete state.busyOps[busyKey];
-                renderGadorPanel();
-              }
-            },
-          }),
-        ]),
-      ]),
-    ];
+    const runSubmenuAction = async (actionItem) => {
+      if (state.busyOps[busyKey]) return;
+      state.busyOps[busyKey] = true;
+      renderGadorPanel();
+      try {
+        const res = await apiPost(
+          `/api/modules/${encodeURIComponent(panel.moduleId)}/sandbox-exec`,
+          { method: actionItem.method, args: actionItem.args || {} }
+        );
+        const okText = res?.ok ? "执行成功" : "执行完成";
+        showToast(`模块「${panel.moduleName}」→ ${actionItem.label}：${okText}`);
+      } catch (e) {
+        showToast(`动作执行失败：${e.message}`, true);
+      } finally {
+        delete state.busyOps[busyKey];
+        renderGadorPanel();
+      }
+    };
 
-    for (const field of fields) {
+    const renderSettingRow = (field) => {
       const curVal = panel.values?.[field.key] ?? field.default;
       const conflictHit = (field.mutuallyExclusiveWith || []).find(
         (ck) => panel.values?.[ck] === true && curVal !== true
       );
-      const conflictField = conflictHit
-        ? panel.schema.find((f) => f.key === conflictHit)
-        : null;
+      const conflictField = conflictHit ? fieldByKey.get(conflictHit) : null;
       const blocked = Boolean(conflictHit);
       const blockedText = blocked
         ? `🚫 冲突禁止：与「${conflictField?.label || conflictHit}」互斥，请先关闭对方`
@@ -1342,10 +1330,12 @@ function renderModuleCustomSettingsCards(root, targetSlot = null) {
 
       let control = null;
       if (field.type === "boolean") {
-        control = makeToggle(Boolean(curVal), field.label, (next) => applySettingPatch({ [field.key]: next }, field.label), {
-          disabled: isBusy || blocked,
-          blockedMessage: blockedText,
-        });
+        control = makeToggle(
+          Boolean(curVal),
+          field.label,
+          (next) => applySettingPatch({ [field.key]: next }, field.label),
+          { disabled: isBusy || blocked, blockedMessage: blockedText }
+        );
       } else if (field.type === "select") {
         control = makeSegmented(
           field.options.map((o) => ({ value: o.value, label: o.label })),
@@ -1375,15 +1365,127 @@ function renderModuleCustomSettingsCards(root, targetSlot = null) {
         ]);
       }
 
+      return el("div", { class: `gd-item${blocked ? " is-blocked" : ""}` }, [
+        el("div", { class: "gd-item-info" }, [
+          el("strong", { text: blocked ? `🚫 ${field.label}` : field.label }),
+          el("span", {
+            text: blocked ? blockedText : field.description || `功能域：${field.feature}`,
+          }),
+        ]),
+        control,
+      ]);
+    };
+
+    const rows = [
+      el("div", { class: "gd-item" }, [
+        el("div", { class: "gd-item-info" }, [
+          el("strong", {
+            text: `${panel.moduleName}（${panel.categoryLabel || panel.category} · v${panel.version}）`,
+          }),
+          el("span", {
+            text: panel.description || "以下自定义设置与二级菜单由该已启用模块的功能清单动态开放。",
+          }),
+        ]),
+        el("div", { class: "gd-actions" }, [
+          isBusy
+            ? el("span", { class: "gd-pill waiting", text: "⏳ 同步执行中…" })
+            : el("span", {
+                class: "gd-pill ok",
+                text:
+                  submenus.length > 0
+                    ? `${submenus.length} 个自定义二级菜单`
+                    : `已授权 ${fields.length} 项`,
+              }),
+          fields.length > 0
+            ? el("button", {
+                type: "button",
+                class: "gd-btn",
+                disabled: isBusy ? true : undefined,
+                text: isBusy ? "⏳ 等待中…" : "恢复默认",
+                onClick: async () => {
+                  if (state.busyOps[busyKey]) return;
+                  state.busyOps[busyKey] = true;
+                  renderGadorPanel();
+                  try {
+                    await apiDelete(`/api/modules/${encodeURIComponent(panel.moduleId)}/settings`);
+                    await refreshAllData();
+                    showToast(`已恢复模块「${panel.moduleName}」默认自定义设置`);
+                  } catch (e) {
+                    showToast(`重置失败：${e.message}`, true);
+                  } finally {
+                    delete state.busyOps[busyKey];
+                    renderGadorPanel();
+                  }
+                },
+              })
+            : null,
+        ]),
+      ]),
+    ];
+
+    if (submenus.length > 0) {
+      // Creator-authored secondary menus (submenus)
+      const activeId =
+        submenus.some((m) => m.id === state.activeModuleSubmenu[panel.moduleId])
+          ? state.activeModuleSubmenu[panel.moduleId]
+          : submenus[0].id;
+      state.activeModuleSubmenu[panel.moduleId] = activeId;
+      const activeMenu = submenus.find((m) => m.id === activeId) || submenus[0];
+
       rows.push(
-        el("div", { class: `gd-item${blocked ? " is-blocked" : ""}` }, [
-          el("div", { class: "gd-item-info" }, [
-            el("strong", { text: blocked ? `🚫 ${field.label}` : field.label }),
-            el("span", { text: blocked ? blockedText : field.description || `功能域：${field.feature}` }),
-          ]),
-          control,
+        el("div", { class: "gd-item stack" }, [
+          makeSegmented(
+            submenus.map((m) => ({ value: m.id, label: m.label })),
+            activeMenu.id,
+            (nextId) => {
+              state.activeModuleSubmenu[panel.moduleId] = nextId;
+              renderGadorPanel();
+            }
+          ),
+          activeMenu.description
+            ? el("span", { class: "gd-muted", text: activeMenu.description })
+            : null,
         ])
       );
+
+      for (const item of activeMenu.items || []) {
+        if (item.type === "setting") {
+          const field = fieldByKey.get(item.key);
+          if (field) rows.push(renderSettingRow(field));
+        } else if (item.type === "action") {
+          rows.push(
+            el("div", { class: "gd-item" }, [
+              el("div", { class: "gd-item-info" }, [
+                el("strong", { text: item.label }),
+                el("span", {
+                  text: item.description || `在 bubblewrap 隔离容器内调用 ${item.method}()`,
+                }),
+              ]),
+              el("button", {
+                type: "button",
+                class: item.danger ? "gd-btn danger" : "gd-btn primary",
+                disabled: isBusy ? true : undefined,
+                text: isBusy ? "⏳ 执行中…" : item.label,
+                onClick: () => runSubmenuAction(item),
+              }),
+            ])
+          );
+        } else if (item.type === "info") {
+          rows.push(
+            el("div", { class: "gd-item" }, [
+              el("div", { class: "gd-item-info" }, [
+                el("strong", { text: item.label || "说明" }),
+                el("span", { text: item.text || "" }),
+              ]),
+              el("span", { class: "gd-pill", text: "模块信息" }),
+            ])
+          );
+        }
+      }
+    } else {
+      for (const field of fields) {
+        rows.push(renderSettingRow(field));
+      }
     }
 
     root.appendChild(el("section", { class: "gd-card" }, rows));

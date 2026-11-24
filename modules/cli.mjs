@@ -24,9 +24,11 @@ import {
   stopModuleContainer,
 } from "./sandbox/container-manager.mjs";
 import {
+  CUSTOM_SETTING_TYPES,
   EXCLUSIVE_CONFLICT_GROUPS,
   MODULE_CATEGORIES,
   MODULE_LIFECYCLE_METHODS,
+  SUBMENU_ITEM_TYPES,
 } from "./schema.mjs";
 import {
   addTrustedPublisherKey,
@@ -51,7 +53,7 @@ Usage:
   gador-mod uninstall <moduleId|all> [--purge] [--json]
   gador-mod enable <moduleId> [--json]
   gador-mod disable <moduleId> [--json]
-  gador-mod init <moduleId> [--dir <targetDir>] [--name <title>] [--category <network|privacy|identity|automation|appearance|security>] [--exclusive-group <group>] [--with-extension]
+  gador-mod init <moduleId> [--dir <targetDir>] [--name <title>] [--category <category>] [--exclusive-group <group>] [--with-extension]
   gador-mod spec [--json]
   gador-mod auth status
   gador-mod auth set-passphrase [--passphrase <pin>]
@@ -184,7 +186,7 @@ async function main() {
   }
 
   if (cmd === "verify") {
-    if (!sub) throw new Error("Usage: gador-mod verify <vpn|privacy-shield|/path/to/module>");
+    if (!sub) throw new Error("Usage: gador-mod verify <moduleId|/path/to/module>");
     const state = getModulesState();
     const known = state.modules.find((m) => m.id === sub);
     const targetDir = known ? known.sourceDir : path.resolve(sub);
@@ -201,6 +203,8 @@ async function main() {
           categories: MODULE_CATEGORIES,
           exclusiveGroups: EXCLUSIVE_CONFLICT_GROUPS,
           lifecycleMethods: MODULE_LIFECYCLE_METHODS,
+          customSettingTypes: CUSTOM_SETTING_TYPES,
+          submenuItemTypes: SUBMENU_ITEM_TYPES,
         },
         null,
         2
@@ -213,7 +217,7 @@ async function main() {
     const modId = String(sub || "").trim();
     if (!/^[a-z0-9][a-z0-9_-]{1,47}$/.test(modId)) {
       throw new Error(
-        'Usage: gador-mod init <moduleId> [--dir <targetDir>] [--name <title>] [--category <network|privacy|identity|automation|appearance|security>] [--exclusive-group <group>] [--with-extension]'
+        `Usage: gador-mod init <moduleId> [--dir <targetDir>] [--name <title>] [--category <${Object.keys(MODULE_CATEGORIES).join("|")}>] [--exclusive-group <group>] [--with-extension]`
       );
     }
     const category = typeof flags.category === "string" ? flags.category : "automation";
@@ -278,8 +282,55 @@ async function main() {
           description: "仅在安装并启用本模块后对用户开放的自定义开关示例",
           feature: "core",
           slot: "ai",
+          submenu: "general",
           type: "boolean",
           default: true,
+        },
+        {
+          key: "mode",
+          label: "运行模式",
+          description: "创作者可在二级菜单中自定义分组展示",
+          feature: "core",
+          slot: "ai",
+          submenu: "general",
+          type: "select",
+          default: "balanced",
+          options: [
+            { value: "balanced", label: "均衡" },
+            { value: "strict", label: "严格" },
+          ],
+        },
+      ],
+      submenus: [
+        {
+          id: "general",
+          label: "基础功能",
+          description: "由模块创作者自定义编排的二级菜单",
+          order: 1,
+          items: [
+            { type: "setting", key: "enabledFeature" },
+            { type: "setting", key: "mode" },
+          ],
+        },
+        {
+          id: "diagnostics",
+          label: "状态与自检",
+          description: "创作者自定义的沙箱动作与说明栏",
+          order: 2,
+          items: [
+            {
+              type: "info",
+              label: "运行环境",
+              text: "所有动作均在 bubblewrap 轻量隔离容器内执行",
+            },
+            {
+              type: "action",
+              id: "healthCheck",
+              label: "运行健康检查",
+              description: "调用模块导出的 healthCheck() 方法",
+              method: "healthCheck",
+            },
+          ],
         },
       ],
     };

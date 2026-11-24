@@ -31,6 +31,36 @@ export const MODULE_CATEGORIES = {
     label: "安全审计与策略防护",
     description: "下载拦截、域名白名单、企业合规审计与凭据外泄防护模块",
   },
+  productivity: {
+    id: "productivity",
+    label: "效率与工作区工具",
+    description: "标签分组、稍后阅读、剪贴板/笔记联动与快捷命令模块",
+  },
+  content: {
+    id: "content",
+    label: "内容净化与阅读增强",
+    description: "元素屏蔽、沉浸式阅读模式、页面翻译与排版字体增强模块",
+  },
+  developer: {
+    id: "developer",
+    label: "开发者与调试工具",
+    description: "请求抓包检查、Header/Mock 注入、性能与无障碍诊断模块",
+  },
+  media: {
+    id: "media",
+    label: "音视频与媒体控制",
+    description: "独立标签音量/倍速、画中画增强、字幕与媒体捕获控制模块",
+  },
+  data: {
+    id: "data",
+    label: "数据采集与同步导出",
+    description: "结构化页面抽取、本地知识归档与加密配置同步导出模块",
+  },
+  search: {
+    id: "search",
+    label: "搜索与知识库检索",
+    description: "自定义聚合搜索、本地文档/RAG 检索与问答增强模块",
+  },
 };
 
 export const EXCLUSIVE_CONFLICT_GROUPS = {
@@ -58,6 +88,16 @@ export const EXCLUSIVE_CONFLICT_GROUPS = {
     id: "cookie-policy",
     label: "Cookie 策略接管槽位",
     description: "默认保留 Chromium 原生 Cookie 功能；若模块主动覆写/屏蔽原生 Cookie 策略，同一时间仅允许一个模块占用此槽位",
+  },
+  "content-blocker": {
+    id: "content-blocker",
+    label: "全站内容拦截规则槽位",
+    description: "同一时间仅允许一个主内容净化/广告拦截引擎接管全站 DNR 规则，避免规则集互相冲突",
+  },
+  "search-provider": {
+    id: "search-provider",
+    label: "默认搜索增强槽位",
+    description: "同一时间仅允许一个搜索增强模块接管默认搜索路由与联想建议",
   },
 };
 
@@ -146,6 +186,7 @@ export function normalizeSettingsSchema(manifest) {
       description: String(item.description || ""),
       feature: String(item.feature || "general"),
       slot: String(item.slot || "ai"),
+      submenu: item.submenu ? String(item.submenu).trim() : "",
       type,
       default: defVal,
       options,
@@ -159,6 +200,97 @@ export function normalizeSettingsSchema(manifest) {
     });
   }
   return normalized;
+}
+
+export const SUBMENU_ITEM_TYPES = ["setting", "action", "info"];
+
+/**
+ * Normalize creator-authored secondary menus (`submenus`) declared in a module's `module.json`.
+ * Each module creator designs their own submenu tabs & items using strictly declarative JSON:
+ *   - { type: "setting", key }                -> binds a field declared in this module's settingsSchema
+ *   - { type: "action", id, label, method }   -> invokes an exported sandbox method inside bubblewrap
+ *   - { type: "info", label, text }           -> read-only status/description row (TrustedTypes safe)
+ */
+export function normalizeModuleSubmenus(manifest, settingsSchema = null) {
+  const schema = Array.isArray(settingsSchema)
+    ? settingsSchema
+    : normalizeSettingsSchema(manifest);
+  const validSettingKeys = new Set(schema.map((f) => f.key));
+  const rawList = Array.isArray(manifest?.submenus) ? manifest.submenus : [];
+  const seenIds = new Set();
+  const menus = [];
+
+  for (let idx = 0; idx < rawList.length && menus.length < 12; idx++) {
+    const raw = rawList[idx];
+    if (!raw || typeof raw !== "object") continue;
+    const id = String(raw.id || "").trim();
+    if (!id || !/^[a-z0-9][a-z0-9_-]{0,31}$/.test(id) || seenIds.has(id)) {
+      continue;
+    }
+    seenIds.add(id);
+
+    const items = [];
+    const rawItems = Array.isArray(raw.items) ? raw.items : [];
+    const seenSettingInMenu = new Set();
+
+    for (const item of rawItems) {
+      if (items.length >= 32) break;
+      if (!item || typeof item !== "object") continue;
+      const type = String(item.type || "").trim();
+      if (!SUBMENU_ITEM_TYPES.includes(type)) continue;
+
+      if (type === "setting") {
+        const key = String(item.key || "").trim();
+        if (!key || !validSettingKeys.has(key) || seenSettingInMenu.has(key)) continue;
+        seenSettingInMenu.add(key);
+        items.push({ type: "setting", key });
+      } else if (type === "action") {
+        const method = String(item.method || "").trim();
+        if (!method || !/^[a-zA-Z][a-zA-Z0-9_]{0,63}$/.test(method)) continue;
+        const actionId = String(item.id || method).trim();
+        if (!/^[a-zA-Z0-9_-]{1,64}$/.test(actionId)) continue;
+        items.push({
+          type: "action",
+          id: actionId,
+          label: String(item.label || actionId),
+          description: String(item.description || ""),
+          method,
+          args:
+            item.args && typeof item.args === "object" && !Array.isArray(item.args)
+              ? item.args
+              : {},
+          danger: Boolean(item.danger),
+        });
+      } else if (type === "info") {
+        items.push({
+          type: "info",
+          label: String(item.label || ""),
+          text: String(item.text || ""),
+        });
+      }
+    }
+
+    // Also attach any settingsSchema fields explicitly assigned to `submenu: id` that weren't listed in items
+    for (const field of schema) {
+      if (items.length >= 32) break;
+      if (field.submenu === id && !seenSettingInMenu.has(field.key)) {
+        seenSettingInMenu.add(field.key);
+        items.push({ type: "setting", key: field.key });
+      }
+    }
+
+    menus.push({
+      id,
+      label: String(raw.label || id),
+      description: String(raw.description || ""),
+      icon: String(raw.icon || "sliders").slice(0, 32),
+      order: Number.isFinite(Number(raw.order)) ? Number(raw.order) : idx + 1,
+      items,
+    });
+  }
+
+  menus.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+  return menus;
 }
 
 export function getDefaultCustomSettings(schema) {

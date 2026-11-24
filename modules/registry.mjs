@@ -18,8 +18,10 @@ import {
   getDefaultCustomSettings,
   MODULE_CATEGORIES,
   MODULE_LIFECYCLE_METHODS,
+  normalizeModuleSubmenus,
   normalizeSettingsSchema,
   resolveModuleSecurityTier,
+  SUBMENU_ITEM_TYPES,
   validateModuleCustomSettings,
 } from "./schema.mjs";
 import {
@@ -180,6 +182,7 @@ export function getModulesState() {
     );
 
     const settingsSchema = normalizeSettingsSchema(manifest);
+    const submenus = normalizeModuleSubmenus(manifest, settingsSchema);
 
     modules.push({
       id,
@@ -202,6 +205,8 @@ export function getModulesState() {
       extensionReady,
       settingsSchema,
       customSettingsCount: settingsSchema.length,
+      submenus,
+      submenusCount: submenus.length,
       verification: installed ? installedVerification : catalogVerification,
       manifest,
     });
@@ -680,7 +685,7 @@ function writeStoredCustomSettings(moduleId, values, actor = "user") {
   return filePath;
 }
 
-function requireActiveCustomSettingsModule(moduleId) {
+function requireActiveCustomSettingsModule(moduleId, { allowSubmenusOnly = false } = {}) {
   const state = getModulesState();
   const mod = state.modules.find((m) => m.id === moduleId);
   if (!mod || !mod.installed || !mod.enabled || !mod.integrityOk) {
@@ -691,18 +696,21 @@ function requireActiveCustomSettingsModule(moduleId) {
     throw err;
   }
   const schema = Array.isArray(mod.settingsSchema) ? mod.settingsSchema : [];
-  if (schema.length === 0) {
+  const submenus = Array.isArray(mod.submenus) ? mod.submenus : [];
+  if (schema.length === 0 && (!allowSubmenusOnly || submenus.length === 0)) {
     const err = new Error(
       `Module "${moduleId}" does not declare any settingsSchema entries.`
     );
     err.code = "ERR_MODULE_NO_CUSTOM_SETTINGS";
     throw err;
   }
-  return { mod, schema };
+  return { mod, schema, submenus };
 }
 
 export function getModuleCustomSettings(moduleId) {
-  const { mod, schema } = requireActiveCustomSettingsModule(moduleId);
+  const { mod, schema, submenus } = requireActiveCustomSettingsModule(moduleId, {
+    allowSubmenusOnly: true,
+  });
   const values = readStoredCustomSettings(moduleId, schema);
   return {
     ok: true,
@@ -711,6 +719,7 @@ export function getModuleCustomSettings(moduleId) {
     category: mod.category,
     version: mod.version,
     features: [...new Set(schema.map((f) => f.feature))],
+    submenus,
     schema,
     values,
     settingsPath: moduleSettingsFilePath(moduleId),
@@ -718,7 +727,7 @@ export function getModuleCustomSettings(moduleId) {
 }
 
 export function updateModuleCustomSettings(moduleId, patch, { actor = "user" } = {}) {
-  const { mod, schema } = requireActiveCustomSettingsModule(moduleId);
+  const { mod, schema, submenus } = requireActiveCustomSettingsModule(moduleId);
   const current = readStoredCustomSettings(moduleId, schema);
   const { values, changedKeys } = validateModuleCustomSettings(schema, current, patch);
   const settingsPath = writeStoredCustomSettings(moduleId, values, actor);
@@ -734,6 +743,7 @@ export function updateModuleCustomSettings(moduleId, patch, { actor = "user" } =
     moduleId: mod.id,
     moduleName: mod.name,
     changedKeys,
+    submenus,
     schema,
     values,
     settingsPath,
@@ -741,7 +751,7 @@ export function updateModuleCustomSettings(moduleId, patch, { actor = "user" } =
 }
 
 export function resetModuleCustomSettings(moduleId, { actor = "user" } = {}) {
-  const { mod, schema } = requireActiveCustomSettingsModule(moduleId);
+  const { mod, schema, submenus } = requireActiveCustomSettingsModule(moduleId);
   const defaults = getDefaultCustomSettings(schema);
   const settingsPath = writeStoredCustomSettings(moduleId, defaults, actor);
   appendModuleAuditLog({
@@ -754,6 +764,7 @@ export function resetModuleCustomSettings(moduleId, { actor = "user" } = {}) {
     ok: true,
     moduleId: mod.id,
     moduleName: mod.name,
+    submenus,
     schema,
     values: defaults,
     settingsPath,
@@ -766,14 +777,17 @@ export function listActiveCustomSettingsPanels() {
   for (const mod of state.modules) {
     if (!mod.installed || !mod.enabled || !mod.integrityOk) continue;
     const schema = Array.isArray(mod.settingsSchema) ? mod.settingsSchema : [];
-    if (schema.length === 0) continue;
+    const submenus = Array.isArray(mod.submenus) ? mod.submenus : [];
+    if (schema.length === 0 && submenus.length === 0) continue;
     panels.push({
       moduleId: mod.id,
       moduleName: mod.name,
       category: mod.category,
+      categoryLabel: MODULE_CATEGORIES[mod.category]?.label || mod.category,
       version: mod.version,
       description: mod.description,
       features: [...new Set(schema.map((f) => f.feature))],
+      submenus,
       schema,
       values: readStoredCustomSettings(mod.id, schema),
       settingsPath: moduleSettingsFilePath(mod.id),
@@ -782,6 +796,7 @@ export function listActiveCustomSettingsPanels() {
   return {
     ok: true,
     supportedTypes: CUSTOM_SETTING_TYPES,
+    supportedSubmenuItemTypes: SUBMENU_ITEM_TYPES,
     panels,
   };
 }

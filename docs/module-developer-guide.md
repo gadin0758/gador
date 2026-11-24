@@ -4,8 +4,8 @@
 1. **安全准入与分级验证规范**（为什么普通设置页不直接暴露安装按钮；为什么涉及网络出口或指纹防护的高敏模块属于 `securityTier: "critical"`）
 2. **源码明文 + 仅重要资料加密原则**（`openModuleSecretVault` AES-256-GCM）
 3. **默认保留 Chromium 原生 Cookie 策略 + 取消/覆写原生 Cookie 的标准接口指南**
-4. **模块驱动的用户自定义设置权限规范（`settingsSchema`）**：仅当对应模块加入并启用后，按模块内实际功能动态向用户开放自定义设置权限
-5. **6 大模块种类、7 个标准生命周期方法、5 大互斥槽位与等待（⏳）/ 禁止（🚫）交互规范**
+4. **模块驱动的用户自定义设置权限与创作者自制二级菜单规范（`settingsSchema` + `submenus`）**：仅当对应模块加入并启用后，按模块内实际功能动态开放自定义设置，并由创作者自由编排每个模块的二级菜单
+5. **12 大模块种类、7 个标准生命周期方法、7 大互斥槽位与等待（⏳）/ 禁止（🚫）交互规范**
 6. **模块对网页的全部可执行操作清单与代码示例**（加载期注入、网络头治理、DOM 交互、弹窗/标签移交、设置页 UI 与硬安全红线）
 7. **从零制作、签名、验证、安装与排障的完整 6 步实操教程**
 
@@ -176,11 +176,53 @@ gador-mod settings my-custom-mod reset
 
 ---
 
+## 3.6 模块创作者自制二级菜单规范（`submenus`）
+
+每个模块除了声明 `settingsSchema` 外，**每个模块的二级菜单均由模块创作者自己在 `module.json` 的 `submenus` 数组中自由设计与编排**，浏览器设置页在对应模块加入且启用后会自动解析并渲染创作者定制的二级菜单切换栏与内容（全声明式渲染，100% 满足 TrustedTypes CSP、零 XSS 风险）：
+
+- **二级菜单结构**：单个模块最多支持 12 个二级菜单（按 `order` 升序排列），每个二级菜单最多包含 32 个条目；
+- **支持 3 类菜单项（`items[].type`）**：
+  1. `setting`：`{ "type": "setting", "key": "<settingsSchema中的key>" }` — 绑定该模块自身声明的自定义设置项（自动具备范围校验、`⏳` 等待与 `🚫` 互斥禁止态；也可直接在 `settingsSchema` 项中写 `"submenu": "<menuId>"` 自动归入对应二级菜单，越权引用不存在的键会被自动过滤）；
+  2. `action`：`{ "type": "action", "id": "runCheck", "label": "执行自检", "method": "healthCheck", "description": "...", "args": {}, "danger": false }` — 绑定该模块 `index.mjs` 导出的方法，用户点击后通过 `/api/modules/:id/sandbox-exec` 在 `bubblewrap` 轻量隔离容器内安全执行；
+  3. `info`：`{ "type": "info", "label": "运行说明", "text": "..." }` — 创作者自定义的只读状态或说明提示行。
+
+**创作者自定义二级菜单完整示例（`module.json`）**：
+```json
+"submenus": [
+  {
+    "id": "filter-menu",
+    "label": "规则模式",
+    "description": "控制过滤策略与兼容性开关",
+    "order": 1,
+    "items": [
+      { "type": "setting", "key": "strictMode" },
+      { "type": "setting", "key": "compatMode" }
+    ]
+  },
+  {
+    "id": "audit-menu",
+    "label": "审计与自检",
+    "description": "日志级别、重试参数与容器内健康检查",
+    "order": 2,
+    "items": [
+      { "type": "setting", "key": "logLevel" },
+      { "type": "setting", "key": "maxRetries" },
+      { "type": "info", "label": "安全说明", "text": "所有动作均在 bubblewrap 轻量命名空间容器内执行" },
+      { "type": "action", "id": "runHealth", "label": "运行沙箱自检", "method": "healthCheck" }
+    ]
+  }
+]
+```
+
+> 使用 `gador-mod init <moduleId>` 生成新模块脚手架时，已默认附带 `general` 与 `diagnostics` 两个创作者可编辑的二级菜单示例。
+
+---
+
 ## 4. 模块种类、标准方法、互斥冲突与等待/禁止标识规范
 
 可通过 `gador-mod spec` 实时查看机器可读的完整规范 JSON（源码：[modules/schema.mjs](../modules/schema.mjs)）。
 
-### 4.1 六大标准模块种类（`category`）
+### 4.1 十二大标准模块种类（`category`）
 
 | `category` | 中文名称 | 适用范围 |
 | :--- | :--- | :--- |
@@ -190,6 +232,12 @@ gador-mod settings my-custom-mod reset
 | `automation` | AI 自动化与站点增强 | 站点语义插件、DOM 感知辅助、受控工作流工具 |
 | `appearance` | 外观与光场主题 | 自定义光场预设、侧边栏皮肤、布局增强 |
 | `security` | 安全审计与策略防护 | 下载拦截、合规审计、脚本/Cookie 策略管控 |
+| `productivity` | 效率与工作区工具 | 标签分组、稍后阅读、剪贴板/笔记联动与快捷命令模块 |
+| `content` | 内容净化与阅读增强 | 元素屏蔽、沉浸式阅读模式、页面翻译与排版字体增强模块 |
+| `developer` | 开发者与调试工具 | 请求抓包检查、Header/Mock 注入、性能与无障碍诊断模块 |
+| `media` | 音视频与媒体控制 | 独立标签音量/倍速、画中画增强、字幕与媒体捕获控制模块 |
+| `data` | 数据采集与同步导出 | 结构化页面抽取、本地知识归档与加密配置同步导出模块 |
+| `search` | 搜索与知识库检索 | 自定义聚合搜索、本地文档/RAG 检索与问答增强模块 |
 
 ### 4.2 标准生命周期方法（`index.mjs` 导出规范）
 
@@ -204,7 +252,7 @@ gador-mod settings my-custom-mod reset
 | `getStatus` | `() => { id, version, ready, ... }` | 返回实时运行状态供设置页与 `gador-mod status` 展示 |
 | `healthCheck` | `async () => { healthy, details? }` | 供 `gador-mod doctor` 与监控巡检调用 |
 
-### 4.3 五大互斥槽位（`exclusiveGroups`）与冲突硬拦截
+### 4.3 七大互斥槽位（`exclusiveGroups`）与冲突硬拦截
 
 相互冲突、无法同时使用的模块与功能**严禁同时开启**。在 `module.json` 中通过 `compatibility` 声明：
 
@@ -230,6 +278,8 @@ gador-mod settings my-custom-mod reset
 | `cookie-policy` | Cookie 策略接管槽位 | 同一时间仅允许 1 个覆写/屏蔽原生 Cookie 的模块启用 |
 | `dns-resolver` | 独立 DNS / DoH 槽位 | 同一时间仅允许 1 个模块接管独立 DNS/DoH 解析 |
 | `newtab-override` | 新标签页覆盖槽位 | 同一时间仅允许 1 个模块覆盖 `chrome://newtab` |
+| `content-blocker` | 全站内容拦截规则槽位 | 同一时间仅允许 1 个主内容净化/广告拦截模块接管全站 DNR 规则 |
+| `search-provider` | 默认搜索增强槽位 | 同一时间仅允许 1 个搜索增强模块接管默认搜索路由与联想建议 |
 
 当尝试安装启用或开启与已启用模块冲突的模块时：
 - 内核/注册表立即拒绝并返回 `ERR_MODULE_CONFLICT`（HTTP `409 Conflict`），附带 `conflictState.blockedBy` 明确指出冲突模块与槽位；

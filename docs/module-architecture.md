@@ -73,12 +73,13 @@ stateDiagram-v2
 
 ---
 
-## 4. 模块驱动的自定义设置权限机制（`settingsSchema`）
+## 4. 模块驱动的自定义设置权限与创作者二级菜单（`settingsSchema` + `submenus`）
 
-1. **权限前提**：用户仅对**已安装、已启用且签名完好**的模块享有自定义设置权限；
-2. **功能对齐**：可修改的字段严格受限于该模块 `module.json` 中 `settingsSchema` 声明的功能项（支持 `boolean`、`select`、`number`、`string` 四类字段及 `min`/`max`/`options` 校验）；
-3. **冲突硬拦截**：若字段声明了 `mutuallyExclusiveWith`，同时开启互斥开关将被服务端返回 `409 ERR_SETTING_CONFLICT` 并在 UI 显示 `🚫 冲突禁止` 标识；
-4. **统一入口**：支持浏览器设置页动态卡片、HTTP API（`GET /api/custom-settings`、`GET/POST/DELETE /api/modules/:id/settings`）与 CLI（`gador-mod settings <id> get|set|reset`）。
+1. **权限前提**：用户仅对**已安装、已启用且签名完好**的模块享有自定义设置与二级菜单交互权限；
+2. **十二大模块种类**：支持 `network`、`privacy`、`identity`、`automation`、`appearance`、`security`、`productivity`、`content`、`developer`、`media`、`data`、`search` 共 12 类模块（详见 `gador-mod spec`）；
+3. **创作者自制二级菜单**：每个模块创作者可在 `module.json` 的 `submenus` 中自由设计本模块的二级菜单标签与编排项（支持 `setting` 绑定设置项、`action` 触发 `bubblewrap` 沙箱内方法、`info` 展示只读说明），浏览器设置页全声明式渲染（TrustedTypes 安全）；
+4. **功能对齐与冲突硬拦截**：可修改的字段严格受限于该模块 `settingsSchema`（支持 `boolean`、`select`、`number`、`string`）；互斥设置项同时开启将被服务端返回 `409 ERR_SETTING_CONFLICT` 并在 UI 显示 `🚫 冲突禁止`；
+5. **统一入口**：支持浏览器设置页动态二级菜单卡片、HTTP API（`GET /api/custom-settings`、`GET/POST/DELETE /api/modules/:id/settings`）与 CLI（`gador-mod settings <id> get|set|reset`）。
 
 > 典型场景举例：网络出口类（如独立 VPN 代理管理）或隐私防护类（如指纹防护）模块均遵循同一套验证、沙箱隔离与按功能动态开放自定义设置的规范；本仓库与发行包不内置此类敏感模块实现，开发者可按 [docs/module-developer-guide.md](module-developer-guide.md) 自行构建与签名接入。
 

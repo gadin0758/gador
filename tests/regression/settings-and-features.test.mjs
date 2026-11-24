@@ -598,7 +598,7 @@ test("Comprehensive Settings, Personalization, Space Separation, VPN Archive/Bac
             id: modId,
             name: "自定义功能设置测试模块",
             version: "0.1.0",
-            category: "automation",
+            category: "productivity",
             optional: true,
             plaintextSource: true,
             entry: "./index.mjs",
@@ -627,6 +627,7 @@ test("Comprehensive Settings, Personalization, Space Separation, VPN Archive/Bac
                 label: "日志级别",
                 feature: "audit",
                 slot: "ai",
+                submenu: "audit-menu",
                 type: "select",
                 default: "info",
                 options: [
@@ -646,12 +647,44 @@ test("Comprehensive Settings, Personalization, Space Separation, VPN Archive/Bac
                 max: 10,
               },
             ],
+            submenus: [
+              {
+                id: "audit-menu",
+                label: "审计与动作",
+                description: "创作者自定义二级菜单 2",
+                order: 2,
+                items: [
+                  { type: "setting", key: "maxRetries" },
+                  { type: "setting", key: "nonExistentShouldBeFiltered" },
+                  { type: "info", label: "说明", text: "创作者自定义只读说明" },
+                  {
+                    type: "action",
+                    id: "runCheck",
+                    label: "执行健康检查",
+                    method: "healthCheck",
+                  },
+                ],
+              },
+              {
+                id: "filter-menu",
+                label: "规则模式",
+                description: "创作者自定义二级菜单 1",
+                order: 1,
+                items: [
+                  { type: "setting", key: "strictFilter" },
+                  { type: "setting", key: "compatPass" },
+                ],
+              },
+            ],
           },
           null,
           2
         ) + "\n"
       );
-      fs.writeFileSync(path.join(customModDir, "index.mjs"), `export const ok = true;\n`);
+      fs.writeFileSync(
+        path.join(customModDir, "index.mjs"),
+        `export async function healthCheck() { return { healthy: true, from: "custom-feature-mod" }; }\nexport default { healthCheck };\n`
+      );
       const sigDoc2 = signModuleDirectory(customModDir, {
         privateKeyPem: kp2.privateKeyPem,
         keyId: "custom-settings-pub-v1",
@@ -663,12 +696,44 @@ test("Comprehensive Settings, Personalization, Space Separation, VPN Archive/Bac
         enable: true,
       });
 
-      // 3) Now panel is dynamically exposed & valid custom settings updates succeed
+      // 3) Now panel is dynamically exposed with creator-authored submenus (sorted by order) & 12 categories
+      const modsResp = await (await fetch(`${ui.url}/api/modules`)).json();
+      assert.ok(Object.keys(modsResp.categories || {}).length >= 12, "Must expose >= 12 module categories");
+      assert.ok(modsResp.categories.productivity && modsResp.categories.developer && modsResp.categories.content && modsResp.categories.media && modsResp.categories.data && modsResp.categories.search);
+
       const activePanels = await (await fetch(`${ui.url}/api/custom-settings`)).json();
       const foundPanel = activePanels.panels.find((p) => p.moduleId === modId);
       assert.ok(foundPanel, "Installed module with settingsSchema must unlock custom settings panel");
+      assert.equal(foundPanel.category, "productivity");
       assert.equal(foundPanel.values.logLevel, "info");
       assert.equal(foundPanel.values.maxRetries, 3);
+      assert.equal(foundPanel.submenus.length, 2, "Creator-defined submenus must be returned");
+      assert.equal(foundPanel.submenus[0].id, "filter-menu", "Submenus must be sorted by creator order");
+      assert.equal(foundPanel.submenus[1].id, "audit-menu");
+      assert.equal(
+        foundPanel.submenus[1].items.some((it) => it.key === "nonExistentShouldBeFiltered"),
+        false,
+        "Undeclared setting references in submenus must be stripped"
+      );
+      assert.equal(
+        foundPanel.submenus[1].items.some((it) => it.type === "setting" && it.key === "logLevel"),
+        true,
+        "Setting with matching submenu property must auto-bind into that submenu"
+      );
+      const actionItem = foundPanel.submenus[1].items.find((it) => it.type === "action");
+      assert.equal(actionItem?.method, "healthCheck");
+
+      // Invoking creator submenu action executes safely inside bubblewrap sandbox
+      const actionExecRes = await (
+        await fetch(`${ui.url}/api/modules/${modId}/sandbox-exec`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ method: actionItem.method, args: {} }),
+        })
+      ).json();
+      assert.equal(actionExecRes.ok, true);
+      assert.equal(actionExecRes.result?.healthy, true);
+      assert.equal(actionExecRes.result?.from, "custom-feature-mod");
 
       const updateOk = await (
         await fetch(`${ui.url}/api/modules/${modId}/settings`, {
