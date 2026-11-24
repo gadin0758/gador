@@ -113,14 +113,22 @@ function readRawRegistry() {
   }
 }
 
+function atomicWriteJson0600(filePath, obj) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
+  const tmpPath = `${filePath}.tmp.${process.pid}.${Date.now()}.${Math.random()
+    .toString(16)
+    .slice(2, 8)}`;
+  fs.writeFileSync(tmpPath, JSON.stringify(obj, null, 2) + "\n", { mode: 0o600 });
+  fs.renameSync(tmpPath, filePath);
+}
+
 function writeRawRegistry(data) {
   const regPath = resolveModulesRegistryPath();
-  fs.mkdirSync(path.dirname(regPath), { recursive: true, mode: 0o700 });
-  fs.writeFileSync(
-    regPath,
-    JSON.stringify({ version: 1, modules: data.modules || {}, updatedAt: new Date().toISOString() }, null, 2) + "\n",
-    { mode: 0o600 }
-  );
+  atomicWriteJson0600(regPath, {
+    version: 1,
+    modules: data.modules || {},
+    updatedAt: new Date().toISOString(),
+  });
 }
 
 function copyDirRecursive(src, dst) {
@@ -666,22 +674,13 @@ function readStoredCustomSettings(moduleId, schema) {
 
 function writeStoredCustomSettings(moduleId, values, actor = "user") {
   const filePath = moduleSettingsFilePath(moduleId);
-  fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
-  fs.writeFileSync(
-    filePath,
-    JSON.stringify(
-      {
-        version: 1,
-        moduleId,
-        updatedAt: new Date().toISOString(),
-        updatedBy: actor,
-        values,
-      },
-      null,
-      2
-    ) + "\n",
-    { mode: 0o600 }
-  );
+  atomicWriteJson0600(filePath, {
+    version: 1,
+    moduleId,
+    updatedAt: new Date().toISOString(),
+    updatedBy: actor,
+    values,
+  });
   return filePath;
 }
 

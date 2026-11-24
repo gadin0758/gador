@@ -17,6 +17,25 @@ import {
   upsertVpnProfile,
 } from "../protocol/vpn-store.mjs";
 
+// Track fresh page_open timestamps so an immediate 0ms CDP call does not race
+// Chromium's initial about:blank -> target RenderFrameHost swap.
+const pageOpenedAt = new Map();
+function markPageOpened(pageId) {
+  if (pageId) pageOpenedAt.set(pageId, Date.now());
+}
+function clearPageOpened(pageId) {
+  if (pageId) pageOpenedAt.delete(pageId);
+}
+async function waitForInitialNavigationSettle(pageId, minSettleMs = 380) {
+  const ts = pageOpenedAt.get(pageId);
+  if (!ts) return;
+  const remaining = minSettleMs - (Date.now() - ts);
+  if (remaining > 0) {
+    await new Promise((r) => setTimeout(r, remaining));
+  }
+  pageOpenedAt.delete(pageId);
+}
+
 export const CORE_MCP_TOOLS = [
   {
     name: "browser_capabilities",
@@ -85,7 +104,13 @@ export const CORE_MCP_TOOLS = [
       },
       required: ["spaceId"],
     },
-    invoke: (client, args) => client.openPage(args),
+    invoke: async (client, args) => {
+      const res = await client.openPage(args);
+      if (res?.pageId && args.url && args.url !== "about:blank") {
+        markPageOpened(res.pageId);
+      }
+      return res;
+    },
   },
   {
     name: "page_list",
@@ -104,7 +129,10 @@ export const CORE_MCP_TOOLS = [
       properties: { pageId: { type: "string" } },
       required: ["pageId"],
     },
-    invoke: (client, args) => client.closePage(args.pageId),
+    invoke: async (client, args) => {
+      clearPageOpened(args.pageId);
+      return client.closePage(args.pageId);
+    },
   },
   {
     name: "page_attach_view",
@@ -386,6 +414,7 @@ export const CORE_MCP_TOOLS = [
       required: ["pageId"],
     },
     invoke: async (client, args) => {
+      await waitForInitialNavigationSettle(args.pageId);
       const maxText = Math.min(20000, Math.max(200, Number(args.maxTextChars) || 4000));
       const maxEls = Math.min(150, Math.max(10, Number(args.maxElements) || 60));
       const expr = `(() => {
@@ -596,7 +625,64 @@ export const CORE_MCP_TOOLS = [
       required: ["pageId"],
     },
     invoke: async (client, args) => {
-      const shot = await client.sendCdp(args.pageId, "Page.captureScreenshot", { format: "png" });
+      // Wait for Chromium's initial about:blank -> target RenderFrameHost swap
+      // if browser_screenshot is called right after page_open.
+      await waitForInitialNavigationSettle(args.pageId);
+      const waitDeadline = Date.now() + 2500;
+      let sawCommitted = false;
+      while (Date.now() < waitDeadline) {
+        try {
+          const probe = await client.call(
+            "cdp.send",
+            {
+              pageId: args.pageId,
+              cdpMethod: "Runtime.evaluate",
+              cdpParams: {
+                expression: "document.readyState + '|' + location.href",
+                returnByValue: true,
+              },
+            },
+            1500
+          );
+          const raw = probe?.result?.value;
+          // Simulation daemon returns mock object without string payload -> capture immediately
+          if (typeof raw !== "string") {
+            sawCommitted = true;
+            break;
+          }
+          const sep = raw.indexOf("|");
+          const readyState = sep >= 0 ? raw.slice(0, sep) : raw;
+          const href = sep >= 0 ? raw.slice(sep + 1) : "";
+          if (readyState !== "loading" && href && href !== "about:blank") {
+            sawCommitted = true;
+            // Give Chromium's offscreen compositor one beat to submit the committed frame
+            await new Promise((r) => setTimeout(r, 120));
+            break;
+          }
+        } catch (err) {
+          if (
+            err?.code === "ERR_HUMAN_IN_CONTROL" ||
+            err?.code === "ERR_TARGET_OUT_OF_SCOPE" ||
+            err?.code === "ERR_DOMAIN_DENIED" ||
+            err?.code === "ERR_SENSITIVE_ACTION_REQUIRES_HUMAN"
+          ) {
+            throw err;
+          }
+        }
+        await new Promise((r) => setTimeout(r, 80));
+      }
+      if (!sawCommitted) {
+        await new Promise((r) => setTimeout(r, 150));
+      }
+      const shot = await client.call(
+        "cdp.send",
+        {
+          pageId: args.pageId,
+          cdpMethod: "Page.captureScreenshot",
+          cdpParams: { format: "png", fromSurface: true },
+        },
+        10000
+      );
       return {
         __mcpImage: true,
         mimeType: "image/png",
