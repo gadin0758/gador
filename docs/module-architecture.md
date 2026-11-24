@@ -1,22 +1,22 @@
-# Gador 可插拔模块设计与整合架构（VPN 与指纹防护）
+# Gador 可插拔模块架构与动态自定义设置设计
 
-本文档阐述 Gador 核心浏览器与 **独立可安装模块（`modules/`）** 之间的架构边界、生命周期管理、整合机制以及扩展开发规范。
+本文档阐述 Gador 核心浏览器与 **独立可安装模块（`modules/`）** 之间的架构边界、生命周期管理、轻量容器隔离以及 **按模块功能动态授予用户自定义设置权限** 的整体设计。
 
 ---
 
-## 1. 设计动机：为什么要把 VPN 与指纹防护解耦为独立模块？
+## 1. 设计动机与边界原则
 
 1. **最小权限面原则（Least Privilege）**：
    - 核心扩展（`clients/extension/`）仅需 `["alarms", "tabs"]` 与本机 `http://127.0.0.1:43118/*` 权限，负责 AI 标签光效与四引擎新标签页；
-   - 反指纹防护需要 `declarativeNetRequest`、`storage` 与全站 `MAIN` world `document_start` 注入；将其剥离到 `modules/privacy-shield/extension/` 后，未安装模块时浏览器进程**完全不加载该扩展、零全站脚本注入**。
-2. **核心稳定与独立演进**：
-   - 内核仍保留底层的 `network.setTunnel` / `network.getStatus`（保证高危门禁 P1 WebRTC 防泄漏与 Fail-Closed 基线）；
-   - 高层 VPN 档案管理、宿主机代理探测跟随、强制快照备份库以及反指纹策略集均可按模块独立安装、停用、升级与卸载，不影响核心浏览稳定性。
-3. **用户显式授权、签名校验与透明整合（仅针对 `vpn` 与 `privacy-shield` 两个高权限模块，不影响普通浏览器扩展安装）**：
-   - 普通 Chromium 浏览器扩展（如应用商店扩展）按常规方式自由安装，不受模块验证门禁限制；
-   - `vpn` 与 `privacy-shield` 两个独立高权限模块在安装与加载时强制执行 **三层安全验证**：
+   - 任何高权限扩展能力（例如涉及网络出口、反指纹脚本注入、Cookie 策略覆写或自定义安全策略的模块）均与核心浏览器彻底解耦；未加入对应模块时，浏览器进程**完全不加载额外扩展、零全站脚本注入、不暴露多余设置开关**。
+2. **模块驱动的用户自定义设置权限（Module-Gated Custom Settings）**：
+   - 用户可以自定义与调整模块级设置，**前提是浏览器中已通过签名验证加入了对应模块并处于启用状态**；
+   - 设置项完全由该模块 `module.json` 中的 `settingsSchema` 按模块内实际提供的功能动态声明与授权；未声明的键、越界值或相互冲突的设置项均会被服务端与 UI 拦截；模块停用或卸载后，对应设置权限立即收回。
+3. **用户显式授权、签名校验与透明整合（不影响普通 Chromium 扩展安装）**：
+   - 普通 Chromium 浏览器扩展按常规方式自由安装，不受本模块验证门禁限制；
+   - 独立高权限模块（特别是涉及网络出口、指纹防护、DNS 或 Cookie 策略的高敏模块）在加入与加载时强制执行 **三层安全验证**：
      1. **Ed25519 数字签名 + 全文件 SHA-256 完整性校验**（`signature.json` 对应信任密钥环 `modules/trusted-keys.json` + `~/.config/gador/trusted-module-keys.json`，严禁符号链接、未签名文件、多余注入文件或任意字节篡改）；
-     2. **一次性人工验证挑战（Challenge-Response）+ 可选本地安装密码锁**（WebUI 需先调用 `/install-challenge` 获取 120 秒一次性确认码 `GDR-XXXX`，CLI 需交互输入确认码或显式 `--confirm-digest <sha256前缀>`；如用户配置了 `gador-mod auth set-passphrase`，还须通过 `scrypt` 密码核验）；
+     2. **一次性人工验证挑战（Challenge-Response）+ 可选本地安装密码锁**（禁止绕过验证的静默安装；如用户配置了 `gador-mod auth set-passphrase`，还须通过 `scrypt` 密码核验）；
      3. **运行时复核与审计日志**（启动挂载扩展与 `gador-mod doctor` 会再次校验已安装目录签名，一旦发现磁盘篡改立即拒绝挂载进 Chromium；全部验证记录写入 `0600` 权限 `~/.config/gador/module-audit.log`）；
    - AI 只能通过只读 `module_list` / `gador://modules` 感知状态，无权静默安装或卸载模块。
 
@@ -26,106 +26,61 @@
 
 ```text
 modules/
-  registry.mjs                        # 模块注册表、安装/卸载/启停、扩展路径解析与 doctor 校验
+  schema.mjs                          # 模块分类、互斥槽位、生命周期规范与 settingsSchema 校验引擎
+  verifier.mjs                        # Ed25519 + 全文件 SHA-256 签名核验、挑战码与密码锁
+  secret-vault.mjs                    # AES-256-GCM 仅敏感资料加密密库
+  registry.mjs                        # 模块注册表、安装/卸载/启停、自定义设置权限控制与 doctor 校验
   cli.mjs                             # 独立命令行工具 `gador-mod`
-  vpn/
-    module.json                       # VPN 模块清单（UI 槽位、HTTP 路由、MCP 工具、安全边界）
-    index.mjs                         # VPN 模块编程入口
-    README.md                         # VPN 模块独立安装与使用文档
-  privacy-shield/
-    module.json                       # 隐私与指纹防护模块清单
-    index.mjs                         # 模块编程入口
-    README.md                         # 模块独立安装与使用文档
-    extension/                        # 独立可挂载 MV3 扩展包
-      manifest.json
-      background.js                   # 同步 /api/privacy-shield 并维护 Sec-GPC: 1 动态规则
-      privacy-shield-bridge.js        # ISOLATED world 配置桥
-      privacy-shield-main.js          # MAIN world 反指纹执行引擎（零 window/sessionStorage 痕迹）
+  trusted-keys.json                   # 内置受信任发布者公钥环
+  sandbox/
+    container-manager.mjs             # bubblewrap 轻量命名空间容器管理器（按需启动/空闲回收）
+    worker.mjs                        # 容器内受控模块执行器
 ```
 
 ### 2.1 本机持久化状态
 
-- **模块注册表**：`~/.config/gador/modules.json`（权限 `0600`，支持环境变量 `GADOR_MODULES_FILE` 覆盖以便隔离测试）
-- **模块安装根目录**：`~/.config/gador/installed-modules/<moduleId>/`（与只读内置目录 `~/.local/share/gador/modules/` 物理分离，升级核心浏览器绝不覆盖用户已安装模块；支持 `GADOR_MODULES_DIR` 覆盖）
-
-```json
-{
-  "version": 1,
-  "modules": {
-    "vpn": {
-      "installed": true,
-      "enabled": true,
-      "version": "0.1.0",
-      "installPath": "/home/<user>/.local/share/gador/modules/vpn",
-      "source": "builtin-catalog",
-      "installedAt": "2026-11-24T06:00:00.000Z",
-      "updatedAt": "2026-11-24T06:00:00.000Z"
-    },
-    "privacy-shield": {
-      "installed": true,
-      "enabled": true,
-      "version": "0.1.0",
-      "installPath": "/home/<user>/.local/share/gador/modules/privacy-shield",
-      "source": "builtin-catalog",
-      "installedAt": "2026-11-24T06:00:00.000Z",
-      "updatedAt": "2026-11-24T06:00:00.000Z"
-    }
-  }
-}
-```
+- **模块注册表**：`~/.config/gador/modules.json`（权限 `0600`，支持 `GADOR_MODULES_FILE` 覆盖）
+- **模块安装根目录**：`~/.config/gador/installed-modules/<moduleId>/`（与只读安装目录物理分离，升级核心浏览器绝不覆盖用户已加入模块；支持 `GADOR_MODULES_DIR` 覆盖）
+- **模块自定义设置存储**：`~/.config/gador/module-settings/<moduleId>.json`（权限 `0600`，仅在对应模块已安装且启用时开放读写；支持 `GADOR_MODULE_SETTINGS_DIR` 覆盖）
 
 ---
 
-## 3. 模块生命周期状态机
+## 3. 模块生命周期与自定义设置权限状态机
 
 ```mermaid
 stateDiagram-v2
-    [*] --> NotInstalled: 核心默认安装完成
-    NotInstalled --> InstalledEnabled: gador-mod install <id>\n或 POST /api/modules/<id>/install
-    InstalledEnabled --> InstalledDisabled: gador-mod disable <id>\n或 POST /api/modules/<id>/toggle (false)
-    InstalledDisabled --> InstalledEnabled: gador-mod enable <id>\n或 POST /api/modules/<id>/toggle (true)
+    [*] --> NotInstalled: 核心默认安装完成（无自定义模块设置）
+    NotInstalled --> InstalledEnabled: 验证签名并加入模块\n（按 settingsSchema 开放自定义设置）
+    InstalledEnabled --> InstalledDisabled: gador-mod disable <id>\n（立即收回自定义设置权限）
+    InstalledDisabled --> InstalledEnabled: gador-mod enable <id>\n（复核签名与互斥后恢复权限）
     InstalledEnabled --> NotInstalled: gador-mod uninstall <id> [--purge]
     InstalledDisabled --> NotInstalled: gador-mod uninstall <id> [--purge]
 ```
 
 各状态下的系统行为：
 1. **NotInstalled**：
-   - `Gador 设置` 对应区域展示 **独立模块安装引导卡**（含模块能力说明、CLI 命令与「安装并整合」按钮）；
-   - `gador --desktop` 不挂载该模块的扩展包；
-   - `POST /api/privacy-shield` 返回 `409 ERR_MODULE_NOT_INSTALLED`，MCP `privacy_shield_set` 返回明确安装提示。
+   - 普通设置页**不展示**该模块的自定义设置项，也不直接提供一键安装按钮；
+   - `GET/POST /api/modules/:id/settings` 返回 `409 ERR_MODULE_NOT_INSTALLED`；
+   - `gador --desktop` 不挂载该模块扩展。
 2. **InstalledEnabled**：
-   - 模块包已复制至 `~/.local/share/gador/modules/<id>/` 并在 `modules.json` 标记 `enabled: true`；
-   - `Gador 设置` 自动解锁完整管理面板，并在底部提供「停用 / 卸载模块」控制条；
-   - 若模块包含 `integration.extensionDir`（如 `privacy-shield`），`bin/gador --desktop` 启动时通过 `gador-mod extensions` 自动将其拼入 `--load-extension=<core_ext>,<module_ext>`。
+   - 模块通过 Ed25519 + SHA-256 核验并落盘于 `~/.config/gador/installed-modules/<id>/`；
+   - 若模块声明了 `settingsSchema`，`GET /api/custom-settings` 与浏览器设置页**自动按模块内功能动态渲染自定义设置卡片**，允许用户修改、校验互斥与恢复默认；
+   - 若模块包含 `integration.extensionDir`，`bin/gador --desktop` 启动时通过 `gador-mod extensions` 自动将其拼入 `--load-extension`。
 3. **InstalledDisabled**：
-   - 保留文件与配置，立即暂停前端管理功能与 API 写入；运行中的 `privacy-shield` 扩展会在 1.8s 内轮询到 `moduleEnabled: false` 并自动卸载 `Sec-GPC` 规则、关闭扰动。
+   - 保留文件与用户配置，立即暂停自定义设置读写与扩展生效；无其他启用模块时同步回收容器。
 4. **Uninstalled**：
-   - 移除 `~/.local/share/gador/modules/<id>/`；默认**保留**用户档案/配置（加 `--purge` 或 `purge: true` 时一并清除）。
+   - 移除 `~/.config/gador/installed-modules/<id>/`；默认保留用户配置，加 `--purge` 时一并清除 `module-settings/<id>.json`。
 
 ---
 
-## 4. 两大官方可选模块详细设计
+## 4. 模块驱动的自定义设置权限机制（`settingsSchema`）
 
-### 4.1 `vpn` 模块（独立 VPN 与代理管理）
+1. **权限前提**：用户仅对**已安装、已启用且签名完好**的模块享有自定义设置权限；
+2. **功能对齐**：可修改的字段严格受限于该模块 `module.json` 中 `settingsSchema` 声明的功能项（支持 `boolean`、`select`、`number`、`string` 四类字段及 `min`/`max`/`options` 校验）；
+3. **冲突硬拦截**：若字段声明了 `mutuallyExclusiveWith`，同时开启互斥开关将被服务端返回 `409 ERR_SETTING_CONFLICT` 并在 UI 显示 `🚫 冲突禁止` 标识；
+4. **统一入口**：支持浏览器设置页动态卡片、HTTP API（`GET /api/custom-settings`、`GET/POST/DELETE /api/modules/:id/settings`）与 CLI（`gador-mod settings <id> get|set|reset`）。
 
-- **清单**：[modules/vpn/module.json](../modules/vpn/module.json)
-- **底层依赖**：内核 UDS `network.setTunnel`、`network.getStatus`
-- **整合点**：
-  - **Settings UI 槽位**：`chrome://settings/gador-vpn`（「网络与独立 VPN」）
-  - **数据与备份存储**：`~/.config/gador/vpn/profiles.json` + `~/.config/gador/vpn/backups/*.json`
-  - **AI 安全边界**：`editableScope: "vpn_only"`，所有修改与删除均强制先写入时间戳备份，支持一键还原与一键清空
-  - **宿主机代理联动**：支持探测环境变量、`gsettings` (GNOME)、`kioslaverc` (KDE) 与本机常见代理端口（`7890` / `7897` / `10808` / `10809` / `2080` / `1080`），开启跟随后自动同步，切回手动隧道时自动停止跟随
-
-### 4.2 `privacy-shield` 模块（隐私与指纹防护）
-
-- **清单**：[modules/privacy-shield/module.json](../modules/privacy-shield/module.json)
-- **整合点**：
-  - **Settings UI 槽位**：`chrome://settings/privacy`（「隐私与指纹防护」卡片，位于原生 Chromium 隐私选项上方）
-  - **独立 MV3 扩展**：`modules/privacy-shield/extension/`
-    - `privacy-shield-main.js`：在 `MAIN` world `document_start` 运行，闭包内部生成会话随机种子（不写任何 `window` 属性或 `sessionStorage` 键），覆盖 Canvas 2D / WebGL / AudioContext / DOMRect / `hardwareConcurrency` / `deviceMemory` / `getBattery` / `globalPrivacyControl` / `webdriver`，并通过 `WeakMap` 保持 `Function.prototype.toString` 返回 `[native code]`
-    - `privacy-shield-bridge.js`：在 `ISOLATED` world 监听 `chrome.storage.onChanged` 并通过 `CustomEvent` 热同步策略
-    - `background.js`：轮询 `GET /api/privacy-shield`，动态注册/移除 `declarativeNetRequest` 的 `Sec-GPC: 1` 请求头规则
-  - **AI 环境自检与调试接口**：`privacy_shield_get`、`privacy_shield_set`、`privacy_audit_page`、`gador://privacy-shield`、`debug_environment_privacy` 及 `gador-ctl privacy ...`
+> 典型场景举例：网络出口类（如独立 VPN 代理管理）或隐私防护类（如指纹防护）模块均遵循同一套验证、沙箱隔离与按功能动态开放自定义设置的规范；本仓库与发行包不内置此类敏感模块实现，开发者可按 [docs/module-developer-guide.md](module-developer-guide.md) 自行构建与签名接入。
 
 ---
 

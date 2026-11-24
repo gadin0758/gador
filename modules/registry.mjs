@@ -12,11 +12,15 @@ import {
   stopModuleContainer,
 } from "./sandbox/container-manager.mjs";
 import {
+  CUSTOM_SETTING_TYPES,
   evaluateModuleConflicts,
   EXCLUSIVE_CONFLICT_GROUPS,
+  getDefaultCustomSettings,
   MODULE_CATEGORIES,
   MODULE_LIFECYCLE_METHODS,
+  normalizeSettingsSchema,
   resolveModuleSecurityTier,
+  validateModuleCustomSettings,
 } from "./schema.mjs";
 import {
   appendModuleAuditLog,
@@ -48,6 +52,19 @@ export function resolveInstalledModulesDir() {
   const cfgBase =
     process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
   return path.join(cfgBase, "gador", "installed-modules");
+}
+
+export function resolveModuleSettingsDir() {
+  if (process.env.GADOR_MODULE_SETTINGS_DIR) {
+    return process.env.GADOR_MODULE_SETTINGS_DIR;
+  }
+  const cfgBase =
+    process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
+  return path.join(cfgBase, "gador", "module-settings");
+}
+
+function moduleSettingsFilePath(moduleId) {
+  return path.join(resolveModuleSettingsDir(), `${moduleId}.json`);
 }
 
 function readManifestFromDir(dir) {
@@ -162,6 +179,8 @@ export function getModulesState() {
         fs.existsSync(path.join(extensionPath, "manifest.json"))
     );
 
+    const settingsSchema = normalizeSettingsSchema(manifest);
+
     modules.push({
       id,
       name: manifest.name,
@@ -181,6 +200,8 @@ export function getModulesState() {
       installPath,
       extensionPath,
       extensionReady,
+      settingsSchema,
+      customSettingsCount: settingsSchema.length,
       verification: installed ? installedVerification : catalogVerification,
       manifest,
     });
@@ -557,6 +578,10 @@ export function uninstallModule(moduleId, { purge = false } = {}) {
         process.env.GADOR_VPN_STORE_DIR || path.join(cfgBase, "gador", "vpn");
       if (fs.existsSync(vpnDir)) fs.rmSync(vpnDir, { recursive: true, force: true });
     }
+    const customSettingsPath = moduleSettingsFilePath(moduleId);
+    if (fs.existsSync(customSettingsPath)) {
+      fs.rmSync(customSettingsPath, { force: true });
+    }
   }
 
   appendModuleAuditLog({
@@ -608,6 +633,157 @@ export async function probeModuleInSandbox(moduleId, opts = {}) {
     throw err;
   }
   return probeModuleContainer(mod, opts);
+}
+
+// ---- Module-Gated User Custom Settings (only active when matching module is installed & enabled) ----
+
+function readStoredCustomSettings(moduleId, schema) {
+  const defaults = getDefaultCustomSettings(schema);
+  const filePath = moduleSettingsFilePath(moduleId);
+  if (!fs.existsSync(filePath)) return defaults;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    const stored =
+      parsed && typeof parsed.values === "object" && parsed.values
+        ? parsed.values
+        : {};
+    const merged = { ...defaults };
+    for (const field of schema) {
+      if (Object.prototype.hasOwnProperty.call(stored, field.key)) {
+        merged[field.key] = stored[field.key];
+      }
+    }
+    return merged;
+  } catch {
+    return defaults;
+  }
+}
+
+function writeStoredCustomSettings(moduleId, values, actor = "user") {
+  const filePath = moduleSettingsFilePath(moduleId);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(
+    filePath,
+    JSON.stringify(
+      {
+        version: 1,
+        moduleId,
+        updatedAt: new Date().toISOString(),
+        updatedBy: actor,
+        values,
+      },
+      null,
+      2
+    ) + "\n",
+    { mode: 0o600 }
+  );
+  return filePath;
+}
+
+function requireActiveCustomSettingsModule(moduleId) {
+  const state = getModulesState();
+  const mod = state.modules.find((m) => m.id === moduleId);
+  if (!mod || !mod.installed || !mod.enabled || !mod.integrityOk) {
+    const err = new Error(
+      `Custom settings for module "${moduleId}" are unavailable: install and enable module "${moduleId}" first.`
+    );
+    err.code = "ERR_MODULE_NOT_INSTALLED";
+    throw err;
+  }
+  const schema = Array.isArray(mod.settingsSchema) ? mod.settingsSchema : [];
+  if (schema.length === 0) {
+    const err = new Error(
+      `Module "${moduleId}" does not declare any settingsSchema entries.`
+    );
+    err.code = "ERR_MODULE_NO_CUSTOM_SETTINGS";
+    throw err;
+  }
+  return { mod, schema };
+}
+
+export function getModuleCustomSettings(moduleId) {
+  const { mod, schema } = requireActiveCustomSettingsModule(moduleId);
+  const values = readStoredCustomSettings(moduleId, schema);
+  return {
+    ok: true,
+    moduleId: mod.id,
+    moduleName: mod.name,
+    category: mod.category,
+    version: mod.version,
+    features: [...new Set(schema.map((f) => f.feature))],
+    schema,
+    values,
+    settingsPath: moduleSettingsFilePath(moduleId),
+  };
+}
+
+export function updateModuleCustomSettings(moduleId, patch, { actor = "user" } = {}) {
+  const { mod, schema } = requireActiveCustomSettingsModule(moduleId);
+  const current = readStoredCustomSettings(moduleId, schema);
+  const { values, changedKeys } = validateModuleCustomSettings(schema, current, patch);
+  const settingsPath = writeStoredCustomSettings(moduleId, values, actor);
+  appendModuleAuditLog({
+    action: "module_custom_settings_updated",
+    moduleId,
+    actor,
+    changedKeys,
+    ok: true,
+  });
+  return {
+    ok: true,
+    moduleId: mod.id,
+    moduleName: mod.name,
+    changedKeys,
+    schema,
+    values,
+    settingsPath,
+  };
+}
+
+export function resetModuleCustomSettings(moduleId, { actor = "user" } = {}) {
+  const { mod, schema } = requireActiveCustomSettingsModule(moduleId);
+  const defaults = getDefaultCustomSettings(schema);
+  const settingsPath = writeStoredCustomSettings(moduleId, defaults, actor);
+  appendModuleAuditLog({
+    action: "module_custom_settings_reset",
+    moduleId,
+    actor,
+    ok: true,
+  });
+  return {
+    ok: true,
+    moduleId: mod.id,
+    moduleName: mod.name,
+    schema,
+    values: defaults,
+    settingsPath,
+  };
+}
+
+export function listActiveCustomSettingsPanels() {
+  const state = getModulesState();
+  const panels = [];
+  for (const mod of state.modules) {
+    if (!mod.installed || !mod.enabled || !mod.integrityOk) continue;
+    const schema = Array.isArray(mod.settingsSchema) ? mod.settingsSchema : [];
+    if (schema.length === 0) continue;
+    panels.push({
+      moduleId: mod.id,
+      moduleName: mod.name,
+      category: mod.category,
+      version: mod.version,
+      description: mod.description,
+      features: [...new Set(schema.map((f) => f.feature))],
+      schema,
+      values: readStoredCustomSettings(mod.id, schema),
+      settingsPath: moduleSettingsFilePath(mod.id),
+    });
+  }
+  return {
+    ok: true,
+    supportedTypes: CUSTOM_SETTING_TYPES,
+    panels,
+  };
 }
 
 export function resolveEnabledExtensionDirs() {

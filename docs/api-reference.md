@@ -188,12 +188,16 @@
 | `GET /api/search-engine` / `POST /api/search-engine` | 读写新标签页与设置页四引擎（`google` / `bing` / `baidu` / `duckduckgo`） |
 | `POST /api/user/open-native` | 仅限人类本地设置页调用的原生页面/无痕窗口打开接口（严格 URL 白名单校验） |
 
-### 5.2 独立模块生命周期与安装验证路由（仅限 `vpn` 与 `privacy-shield`）
+### 5.2 独立模块生命周期、沙箱验证与动态自定义设置路由
 
 | 方法与路径 | 请求体 | 说明 |
 | :--- | :--- | :--- |
-| `GET /api/modules` | — | 返回全部可选模块清单、安装状态、启用状态、Ed25519 签名校验摘要与扩展路径 |
+| `GET /api/modules` | — | 返回模块清单、安装状态、启用状态、`settingsSchema`、Ed25519 签名校验摘要与扩展路径 |
 | `GET /api/modules/doctor` | — | 重新校验模块目录、已安装文件 Ed25519 签名 + SHA-256 完整性、扩展清单与轻量容器运行时状态 |
+| `GET /api/custom-settings` | — | 汇总**所有当前已安装且启用**并声明了 `settingsSchema` 的模块自定义设置面板（无对应模块加入时返回空列表） |
+| `GET /api/modules/:id/settings` | — | 查询指定已启用模块的自定义设置 Schema 与当前值（未加入或停用返回 `409 ERR_MODULE_NOT_INSTALLED`） |
+| `POST /api/modules/:id/settings` | `{ values: { [key]: value } }` | 校验模块已启用 + `settingsSchema` 字段/类型/范围/互斥规则后保存用户自定义设置（冲突返回 `409 ERR_SETTING_CONFLICT`，非法字段返回 `400 ERR_INVALID_SETTING`） |
+| `DELETE /api/modules/:id/settings` | — | 将已启用模块的自定义设置重置为 `settingsSchema` 默认值 |
 | `GET /api/modules/sandbox` | — | 查询模块轻量容器（`bubblewrap`）状态（只读，无模块时保持 `STOPPED_IDLE` 且不启动容器） |
 | `POST /api/modules/:id/sandbox-probe` | `{}` | 在已启用模块的轻量容器内执行安全隔离自检探针（验证 `$HOME` 不可见、代码只读、网络隔离、环境变量清空） |
 | `POST /api/modules/:id/sandbox-exec` | `{ method, args? }` | 在已启用模块的轻量容器内执行模块生命周期或自定义方法（64 MiB 内存上限 + 5s 超时熔断） |
@@ -201,9 +205,9 @@
 | `GET /api/modules/auth` | — | 查询是否开启本地模块安装密码锁及受信任发布者公钥列表 |
 | `POST /api/modules/auth/passphrase` | `{ passphrase: string }` 或 `{ action: "clear", currentPassphrase }` | 设置或清除本机模块安装密码锁（`scrypt` 哈希存储于 `~/.config/gador/module-auth.json`） |
 | `POST /api/modules/:id/install-challenge` | `{}` | 第 1 步：校验模块包 Ed25519 签名与全部文件 SHA-256，签发 120 秒单次有效 `{ challengeId, confirmCode, requiresPassphrase, verification, permissions }` |
-| `POST /api/modules/:id/install` | `{ challengeId, confirmCode, passphrase?, enable? }` | 第 2 步：核验一次性确认码与可选密码后安装并整合模块；**未经验证直接调用返回 HTTP `403`（`ERR_INSTALL_VERIFICATION_REQUIRED` / `ERR_INSTALL_VERIFICATION_FAILED` / `ERR_MODULE_SIGNATURE_INVALID`）** |
-| `POST /api/modules/:id/toggle` | `{ enabled: boolean }` | 热启用或停用已安装模块（启用前自动复核签名完整性） |
-| `POST /api/modules/:id/uninstall` | `{ purge?: boolean }` | 卸载模块（`purge: true` 同时清除配置文件） |
+| `POST /api/modules/:id/install` | `{ challengeId, confirmCode, passphrase?, enable? }` | 第 2 步：核验一次性确认码与可选密码后加入模块；**未经验证直接调用返回 HTTP `403`（`ERR_INSTALL_VERIFICATION_REQUIRED` / `ERR_INSTALL_VERIFICATION_FAILED` / `ERR_MODULE_SIGNATURE_INVALID`）** |
+| `POST /api/modules/:id/toggle` | `{ enabled: boolean }` | 热启用或停用已加入模块（启用前自动复核签名完整性与互斥槽位） |
+| `POST /api/modules/:id/uninstall` | `{ purge?: boolean }` | 卸载模块（`purge: true` 同时清除配置文件与 `module-settings/<id>.json`） |
 
 ### 5.3 VPN 模块路由（`/api/vpn/*`）
 
@@ -246,19 +250,24 @@ gador-ctl privacy get | set [--level <off|standard|strict>] | audit <pageId>
 gador-ctl rpc <method> [jsonParams]
 ```
 
-### 6.2 `gador-mod` 独立模块管理与验证命令行
+### 6.2 `gador-mod` 独立模块管理、验证与自定义设置命令行
 ```bash
 gador-mod list [--json]
-gador-mod status <vpn|privacy-shield> [--json]
-gador-mod verify <vpn|privacy-shield|/path/to/module> [--json]
-gador-mod install <vpn|privacy-shield|all> [--confirm-digest <hex8+>] [--passphrase <pin>] [--disabled] [--json]
-gador-mod enable <vpn|privacy-shield> [--json]
-gador-mod disable <vpn|privacy-shield> [--json]
-gador-mod uninstall <vpn|privacy-shield|all> [--purge] [--json]
+gador-mod status <moduleId> [--json]
+gador-mod verify <moduleId|/path/to/module> [--json]
+gador-mod install <moduleId|/path/to/module> [--confirm-digest <hex8+>] [--passphrase <pin>] [--disabled] [--json]
+gador-mod enable <moduleId> [--json]
+gador-mod disable <moduleId> [--json]
+gador-mod uninstall <moduleId> [--purge] [--json]
+gador-mod init <moduleId> [--dir <targetDir>] [--name <title>] [--category <cat>] [--exclusive-group <grp>] [--with-extension]
+gador-mod spec [--json]
+gador-mod settings list [--json]
+gador-mod settings <moduleId> [get|set <key> <value>|reset] [--json]
 gador-mod auth status | set-passphrase | clear-passphrase
 gador-mod trust list | add <keyId> <public-key.pem> [--label <name>] | remove <keyId>
 gador-mod keygen --out <dir> [--key-id <id>]
 gador-mod sign <moduleDir> --key <private-key.pem> --key-id <id>
+gador-mod sandbox status | probe <moduleId> | exec <moduleId> <method> [jsonArgs] | stop [moduleId]
 gador-mod extensions
 gador-mod doctor [--json]
 ```

@@ -567,6 +567,183 @@ test("Comprehensive Settings, Personalization, Space Separation, VPN Archive/Bac
       else process.env.GADOR_VAULT_KEY_FILE = prevVaultKey;
     }
 
+    // Module-gated user custom settings permission test:
+    // Custom settings are ONLY granted when a matching verified module is installed & enabled,
+    // strictly scoped to its declared settingsSchema features, and revoked on disable/uninstall.
+    const prevCustomSettingsDir = process.env.GADOR_MODULE_SETTINGS_DIR;
+    const prevTrustedEnv2 = process.env.GADOR_TRUSTED_KEYS_FILE;
+    process.env.GADOR_MODULE_SETTINGS_DIR = path.join(tmpDir, "module-settings");
+    process.env.GADOR_TRUSTED_KEYS_FILE = path.join(tmpDir, "trusted-keys-custom-settings.json");
+    try {
+      const modId = "custom-feature-mod";
+      // 1) Before module is added: no panel & 409 ERR_MODULE_NOT_INSTALLED
+      const beforePanels = await (await fetch(`${ui.url}/api/custom-settings`)).json();
+      assert.equal(beforePanels.ok, true);
+      assert.equal(beforePanels.panels.some((p) => p.moduleId === modId), false);
+
+      const beforeGet = await fetch(`${ui.url}/api/modules/${modId}/settings`);
+      assert.equal(beforeGet.status, 409);
+      const beforeGetJson = await beforeGet.json();
+      assert.equal(beforeGetJson.code, "ERR_MODULE_NOT_INSTALLED");
+
+      // 2) Author, sign & install custom module declaring feature-scoped settingsSchema
+      const kp2 = generatePublisherKeyPair();
+      addTrustedPublisherKey("custom-settings-pub-v1", kp2.publicKeyPem, { label: "Custom Settings Publisher" });
+      const customModDir = path.join(tmpDir, modId);
+      fs.mkdirSync(customModDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(customModDir, "module.json"),
+        JSON.stringify(
+          {
+            id: modId,
+            name: "自定义功能设置测试模块",
+            version: "0.1.0",
+            category: "automation",
+            optional: true,
+            plaintextSource: true,
+            entry: "./index.mjs",
+            compatibility: { exclusiveGroups: [], conflictsWith: [], requires: [] },
+            settingsSchema: [
+              {
+                key: "strictFilter",
+                label: "严格规则模式",
+                feature: "filter",
+                slot: "ai",
+                type: "boolean",
+                default: false,
+                mutuallyExclusiveWith: ["compatPass"],
+              },
+              {
+                key: "compatPass",
+                label: "兼容直通模式",
+                feature: "filter",
+                slot: "ai",
+                type: "boolean",
+                default: true,
+                mutuallyExclusiveWith: ["strictFilter"],
+              },
+              {
+                key: "logLevel",
+                label: "日志级别",
+                feature: "audit",
+                slot: "ai",
+                type: "select",
+                default: "info",
+                options: [
+                  { value: "warn", label: "警告" },
+                  { value: "info", label: "信息" },
+                  { value: "debug", label: "调试" },
+                ],
+              },
+              {
+                key: "maxRetries",
+                label: "最大重试次数",
+                feature: "scheduler",
+                slot: "ai",
+                type: "number",
+                default: 3,
+                min: 0,
+                max: 10,
+              },
+            ],
+          },
+          null,
+          2
+        ) + "\n"
+      );
+      fs.writeFileSync(path.join(customModDir, "index.mjs"), `export const ok = true;\n`);
+      const sigDoc2 = signModuleDirectory(customModDir, {
+        privateKeyPem: kp2.privateKeyPem,
+        keyId: "custom-settings-pub-v1",
+      });
+      installModule(modId, {
+        sourceDir: customModDir,
+        confirmDigest: sigDoc2.packageDigest.slice(0, 12),
+        passphrase: "gador-secret-pin",
+        enable: true,
+      });
+
+      // 3) Now panel is dynamically exposed & valid custom settings updates succeed
+      const activePanels = await (await fetch(`${ui.url}/api/custom-settings`)).json();
+      const foundPanel = activePanels.panels.find((p) => p.moduleId === modId);
+      assert.ok(foundPanel, "Installed module with settingsSchema must unlock custom settings panel");
+      assert.equal(foundPanel.values.logLevel, "info");
+      assert.equal(foundPanel.values.maxRetries, 3);
+
+      const updateOk = await (
+        await fetch(`${ui.url}/api/modules/${modId}/settings`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ values: { logLevel: "debug", maxRetries: 7 } }),
+        })
+      ).json();
+      assert.equal(updateOk.ok, true);
+      assert.equal(updateOk.values.logLevel, "debug");
+      assert.equal(updateOk.values.maxRetries, 7);
+
+      // 4) Undeclared key & out-of-range number are rejected (400 ERR_INVALID_SETTING)
+      const badKeyRes = await fetch(`${ui.url}/api/modules/${modId}/settings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ values: { undeclaredHack: true } }),
+      });
+      assert.equal(badKeyRes.status, 400);
+      assert.equal((await badKeyRes.json()).code, "ERR_INVALID_SETTING");
+
+      const badRangeRes = await fetch(`${ui.url}/api/modules/${modId}/settings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ values: { maxRetries: 99 } }),
+      });
+      assert.equal(badRangeRes.status, 400);
+      assert.equal((await badRangeRes.json()).code, "ERR_INVALID_SETTING");
+
+      // 5) Mutually exclusive custom settings cannot be enabled simultaneously (409 ERR_SETTING_CONFLICT)
+      const conflictSettingRes = await fetch(`${ui.url}/api/modules/${modId}/settings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ values: { strictFilter: true } }),
+      });
+      assert.equal(conflictSettingRes.status, 409);
+      assert.equal((await conflictSettingRes.json()).code, "ERR_SETTING_CONFLICT");
+
+      // Disabling compatPass while enabling strictFilter succeeds cleanly
+      const switchModeRes = await (
+        await fetch(`${ui.url}/api/modules/${modId}/settings`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ values: { compatPass: false, strictFilter: true } }),
+        })
+      ).json();
+      assert.equal(switchModeRes.ok, true);
+      assert.equal(switchModeRes.values.strictFilter, true);
+      assert.equal(switchModeRes.values.compatPass, false);
+
+      // 6) Reset restores defaults
+      const resetRes = await (
+        await fetch(`${ui.url}/api/modules/${modId}/settings`, { method: "DELETE" })
+      ).json();
+      assert.equal(resetRes.ok, true);
+      assert.equal(resetRes.values.logLevel, "info");
+      assert.equal(resetRes.values.compatPass, true);
+      assert.equal(resetRes.values.strictFilter, false);
+
+      // 7) Disabling / uninstalling module immediately revokes custom settings permission
+      setModuleEnabled(modId, false);
+      const disabledRes = await fetch(`${ui.url}/api/modules/${modId}/settings`);
+      assert.equal(disabledRes.status, 409);
+      assert.equal((await disabledRes.json()).code, "ERR_MODULE_NOT_INSTALLED");
+
+      uninstallModule(modId, { purge: true });
+      const afterPanels = await (await fetch(`${ui.url}/api/custom-settings`)).json();
+      assert.equal(afterPanels.panels.some((p) => p.moduleId === modId), false);
+    } finally {
+      if (prevCustomSettingsDir === undefined) delete process.env.GADOR_MODULE_SETTINGS_DIR;
+      else process.env.GADOR_MODULE_SETTINGS_DIR = prevCustomSettingsDir;
+      if (prevTrustedEnv2 === undefined) delete process.env.GADOR_TRUSTED_KEYS_FILE;
+      else process.env.GADOR_TRUSTED_KEYS_FILE = prevTrustedEnv2;
+    }
+
     // 3. Now Privacy Shield HTTP & MCP APIs work cleanly
     const initial = await (await fetch(`${ui.url}/api/privacy-shield`)).json();
     assert.equal(initial.ok, true);

@@ -88,6 +88,184 @@ export const MODULE_LIFECYCLE_METHODS = [
   "healthCheck",
 ];
 
+export const CUSTOM_SETTING_TYPES = ["boolean", "select", "number", "string"];
+
+/**
+ * Normalize `settingsSchema` declared inside a module's `module.json`.
+ * Users gain custom-setting permissions ONLY for modules that are installed & enabled,
+ * strictly scoped to the features and fields declared here.
+ */
+export function normalizeSettingsSchema(manifest) {
+  const raw = Array.isArray(manifest?.settingsSchema)
+    ? manifest.settingsSchema
+    : [];
+  const seen = new Set();
+  const normalized = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const key = String(item.key || "").trim();
+    if (!key || !/^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$/.test(key) || seen.has(key)) {
+      continue;
+    }
+    const type = CUSTOM_SETTING_TYPES.includes(item.type) ? item.type : "boolean";
+    const options =
+      type === "select" && Array.isArray(item.options)
+        ? item.options
+            .map((opt) => {
+              if (opt && typeof opt === "object") {
+                const value = String(opt.value ?? "").trim();
+                return value ? { value, label: String(opt.label || value) } : null;
+              }
+              const value = String(opt ?? "").trim();
+              return value ? { value, label: value } : null;
+            })
+            .filter(Boolean)
+        : [];
+    if (type === "select" && options.length === 0) continue;
+
+    let defVal = item.default;
+    if (type === "boolean") defVal = Boolean(defVal);
+    else if (type === "select") {
+      defVal = options.some((o) => o.value === String(defVal))
+        ? String(defVal)
+        : options[0].value;
+    } else if (type === "number") {
+      defVal = Number.isFinite(Number(defVal)) ? Number(defVal) : 0;
+    } else {
+      defVal = typeof defVal === "string" ? defVal : "";
+    }
+
+    const mutuallyExclusiveWith = Array.isArray(item.mutuallyExclusiveWith)
+      ? item.mutuallyExclusiveWith.map((s) => String(s).trim()).filter(Boolean)
+      : [];
+
+    seen.add(key);
+    normalized.push({
+      key,
+      label: String(item.label || key),
+      description: String(item.description || ""),
+      feature: String(item.feature || "general"),
+      slot: String(item.slot || "ai"),
+      type,
+      default: defVal,
+      options,
+      min: Number.isFinite(Number(item.min)) ? Number(item.min) : null,
+      max: Number.isFinite(Number(item.max)) ? Number(item.max) : null,
+      maxLength:
+        Number.isFinite(Number(item.maxLength)) && Number(item.maxLength) > 0
+          ? Math.min(2048, Number(item.maxLength))
+          : 512,
+      mutuallyExclusiveWith,
+    });
+  }
+  return normalized;
+}
+
+export function getDefaultCustomSettings(schema) {
+  const out = {};
+  for (const field of schema || []) {
+    out[field.key] = field.default;
+  }
+  return out;
+}
+
+/**
+ * Validate a patch against a module's declared `settingsSchema`.
+ * Rejects undeclared keys, invalid types/ranges, and mutually exclusive boolean settings.
+ */
+export function validateModuleCustomSettings(schema, currentValues, patch) {
+  if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
+    const err = new Error("Custom settings patch must be a JSON object.");
+    err.code = "ERR_INVALID_SETTING";
+    throw err;
+  }
+  const byKey = new Map((schema || []).map((f) => [f.key, f]));
+  const nextValues = { ...getDefaultCustomSettings(schema), ...(currentValues || {}) };
+  const changedKeys = [];
+
+  for (const [key, rawVal] of Object.entries(patch)) {
+    const field = byKey.get(key);
+    if (!field) {
+      const err = new Error(
+        `Setting "${key}" is not declared in this module's settingsSchema.`
+      );
+      err.code = "ERR_INVALID_SETTING";
+      throw err;
+    }
+    let coerced;
+    if (field.type === "boolean") {
+      if (typeof rawVal !== "boolean") {
+        const err = new Error(`Setting "${key}" requires a boolean value.`);
+        err.code = "ERR_INVALID_SETTING";
+        throw err;
+      }
+      coerced = rawVal;
+    } else if (field.type === "select") {
+      const sv = String(rawVal ?? "");
+      if (!field.options.some((o) => o.value === sv)) {
+        const err = new Error(
+          `Setting "${key}" must be one of: ${field.options.map((o) => o.value).join(", ")}.`
+        );
+        err.code = "ERR_INVALID_SETTING";
+        throw err;
+      }
+      coerced = sv;
+    } else if (field.type === "number") {
+      const nv = Number(rawVal);
+      if (!Number.isFinite(nv)) {
+        const err = new Error(`Setting "${key}" requires a finite number.`);
+        err.code = "ERR_INVALID_SETTING";
+        throw err;
+      }
+      if (field.min !== null && nv < field.min) {
+        const err = new Error(`Setting "${key}" must be >= ${field.min}.`);
+        err.code = "ERR_INVALID_SETTING";
+        throw err;
+      }
+      if (field.max !== null && nv > field.max) {
+        const err = new Error(`Setting "${key}" must be <= ${field.max}.`);
+        err.code = "ERR_INVALID_SETTING";
+        throw err;
+      }
+      coerced = nv;
+    } else {
+      if (typeof rawVal !== "string") {
+        const err = new Error(`Setting "${key}" requires a string value.`);
+        err.code = "ERR_INVALID_SETTING";
+        throw err;
+      }
+      if (rawVal.length > field.maxLength) {
+        const err = new Error(
+          `Setting "${key}" exceeds max length (${field.maxLength}).`
+        );
+        err.code = "ERR_INVALID_SETTING";
+        throw err;
+      }
+      coerced = rawVal;
+    }
+    nextValues[key] = coerced;
+    changedKeys.push(key);
+  }
+
+  // Enforce setting-level mutual exclusion (e.g., two incompatible boolean modes)
+  for (const field of schema || []) {
+    if (field.type !== "boolean" || nextValues[field.key] !== true) continue;
+    for (const conflictKey of field.mutuallyExclusiveWith || []) {
+      const other = byKey.get(conflictKey);
+      if (other && other.type === "boolean" && nextValues[conflictKey] === true) {
+        const err = new Error(
+          `Custom setting "${field.label}" (${field.key}) conflicts with "${other.label}" (${conflictKey}); disable one before enabling the other.`
+        );
+        err.code = "ERR_SETTING_CONFLICT";
+        err.conflictKeys = [field.key, conflictKey];
+        throw err;
+      }
+    }
+  }
+
+  return { values: nextValues, changedKeys };
+}
+
 export function normalizeCompatibility(manifest) {
   const compat = manifest?.compatibility && typeof manifest.compatibility === "object"
     ? manifest.compatibility

@@ -1,6 +1,6 @@
 # Gador 浏览器完整使用说明文档
 
-本手册面向最终用户与 AI Agent 集成者，完整介绍 **Gador** 的安装、启动形态、桌面界面功能、独立模块（VPN 与指纹防护）的单独安装与整合、外部 AI 接入以及常见问题排查。
+本手册面向最终用户与 AI Agent 集成者，完整介绍 **Gador** 的安装、启动形态、桌面界面功能、模块驱动的自定义设置权限、外部 AI 接入以及常见问题排查。
 
 ---
 
@@ -17,9 +17,9 @@ Gador 是基于 **Chromium 158** 洁净室内核构建的 Linux 优先 AI-Agent 
 3. **凭据与支付硬围栏 + 即时人工接管（`USER_ACTIVE`）**：
    - `chrome://password-manager`、`chrome://settings/payments`、`file://` 与 `Autofill.*` / `WebAuthn.*` / `FedCm.*` 对 AI 物理不可达（`ERR_DOMAIN_DENIED`）。
    - 页面聚焦密码框或触发支付/结账流程时，内核自动冻结 AI 写入与截图并强制切回 `USER_ACTIVE` 人工接管（`ERR_SENSITIVE_ACTION_REQUIRES_HUMAN`）。
-4. **核心与扩展模块解耦**：
+4. **核心与扩展模块解耦 + 按模块授予自定义设置权限**：
    - 核心浏览器只内置基础 AI 控制面、光效 UI、账户/搜索引擎与底层内核网络原语；
-   - **独立 VPN 管理区域（`vpn`）** 与 **隐私与指纹防护区域（`privacy-shield`）** 被设计为独立可选模块，用户可按需通过 `gador-mod` 或设置页单独安装、整合、停用或卸载。
+   - 默认不预置任何额外高权限功能开关；仅当用户按规范自行加入并启用经过签名的独立模块后，浏览器才会根据该模块内实际提供的功能清单，向用户动态开放对应的自定义设置权限。
 
 ---
 
@@ -42,9 +42,8 @@ npm run install:local
 | `~/.config/gador/` | `0700` | Gador 专属用户数据目录（与 `~/.config/chromium` 完全隔离） |
 | `~/.config/gador/native-ui.json` | `0600` | 热更新原生界面与光效配置（改完即时生效，无需重新编译 C++） |
 | `~/.config/gador/modules.json` | `0600` | 独立模块安装与启用状态注册表 |
-| `~/.config/gador/installed-modules/<id>/` | `0700` | 用户通过验证后单独安装的模块运行目录（如 `vpn/`、`privacy-shield/`，浏览器升级不丢失） |
-| `~/.config/gador/vpn/` | `0700` | VPN 模块档案（`profiles.json`）与修改前自动备份目录（`backups/`） |
-| `~/.config/gador/privacy-shield.json` | `0600` | 隐私与指纹防护模块策略配置 |
+| `~/.config/gador/installed-modules/<id>/` | `0700` | 用户通过签名验证后单独加入的模块运行目录（浏览器升级不丢失） |
+| `~/.config/gador/module-settings/<id>.json` | `0600` | 已启用模块的自定义设置持久化文件（仅在对应模块加入后开放读写） |
 | `$XDG_RUNTIME_DIR/gador/ctl.sock` | `0600` | 内核控制面 Unix Domain Socket（同 UID `SO_PEERCRED` 鉴权） |
 
 ---
@@ -76,60 +75,36 @@ gador-ui
 
 ---
 
-## 4. 独立模块（VPN 与指纹防护）的验证安装与整合
+## 4. 模块驱动的自定义设置权限
 
-Gador 将 **VPN 管理区域（`vpn`）** 与 **隐私与指纹防护区域（`privacy-shield`）** 设计为完全解耦的独立可选模块。**刚安装核心浏览器时，两个模块默认均未安装**；同时为防止他人或恶意脚本随意安装这两个高权限模块，**仅对这两个模块强制实施安装验证**（普通 Chromium 浏览器扩展不受影响，可按常规方式自由安装）：
+Gador 核心浏览器默认保持精简，不向普通设置页暴露未安装模块的开关；**只有当您通过安全验证加入了对应的功能模块并处于启用状态时**，浏览器才会根据该模块内声明的功能（`settingsSchema`）向您开放对应的自定义设置权限：
 
-- **Ed25519 数字签名 + 全文件 SHA-256 校验**：拒绝未签名、未知发布者或任意文件被篡改的模块包；
-- **一次性人工验证确认码 + 可选本地安装密码锁**：禁止无验证的静默安装；可通过 `gador-mod auth set-passphrase` 为本机再加一层安装密码；
-- **运行时完整性复核**：每次启动加载扩展前自动复核已安装模块签名，若磁盘文件被篡改立即拒绝挂载。
+- **默认无模块时**：设置页保持原生精简，不渲染多余自定义开关；对应模块设置接口返回 `ERR_MODULE_NOT_INSTALLED`，且 `bubblewrap` 轻量沙箱容器保持 `STOPPED_IDLE`（零内存占用）。
+- **加入对应模块后**：通过 Ed25519 签名校验与人工确认安装启用后，浏览器设置页与命令行会**按该模块内实际提供的功能**动态生成自定义设置项（如开关、档位选择、数值或文本配置），并支持互斥项自动冲突拦截与一键恢复默认。
+- **停用或卸载模块后**：对应自定义设置权限立即收回，不再显示或允许修改（默认保留历史配置，加 `--purge` 时一并清理）。
 
-### 4.1 方式一：命令行验证安装（推荐）
+### 4.1 管理已加入模块与自定义设置
 
 ```bash
-# 1. 查看模块目录、Ed25519 签名摘要与当前状态
+# 查看已加入模块的状态、签名与容器隔离情况
 gador-mod list
-
-# 2. 单独验证签名完整性
-gador-mod verify vpn
-gador-mod verify privacy-shield
-
-# 3. 交互式验证并安装（终端将展示发布者、SHA-256 摘要并要求输入一次性确认码）
-gador-mod install vpn
-gador-mod install privacy-shield
-
-# 4. （可选）为本机设置模块安装密码锁，后续安装模块均须同时验证密码
-gador-mod auth set-passphrase
-
-# 5. 检查模块签名与整合健康度
 gador-mod doctor
+
+# 查看当前已启用模块向您开放的全部自定义设置面板
+gador-mod settings list
+
+# 读取、修改或重置某个已启用模块的自定义设置（须该模块已加入且启用）
+gador-mod settings <moduleId> get
+gador-mod settings <moduleId> set <key> <value>
+gador-mod settings <moduleId> reset
+
+# 停用、重新启用或卸载已加入模块
+gador-mod disable <moduleId>
+gador-mod enable <moduleId>
+gador-mod uninstall <moduleId> [--purge]
 ```
 
-### 4.2 方式二：在浏览器设置页两步验证安装
-
-1. 打开 `chrome://settings/privacy`（左侧 **「隐私与安全」**）或左侧 **「网络与独立 VPN」**；
-2. 点击 **「开始安全验证并安装 … 模块」**，系统自动校验 Ed25519 签名并生成 120 秒有效的一次性确认码；
-3. 核对发布者密钥、文件数与 SHA-256 摘要后输入确认码（如已设置安装密码则同步输入密码），点击 **「验证并确认安装」**；
-4. 安装 `privacy-shield` 后**重启一次 `gador --desktop`**，启动脚本会自动校验签名并挂载独立反指纹 MV3 扩展。
-
-### 4.3 停用、重新启用与卸载
-
-```bash
-# 临时停用模块（保留安装文件与用户配置）
-gador-mod disable vpn
-gador-mod disable privacy-shield
-
-# 重新启用已安装模块
-gador-mod enable vpn
-gador-mod enable privacy-shield
-
-# 卸载模块（默认保留 ~/.config/gador/vpn 或 privacy-shield.json 历史配置）
-gador-mod uninstall vpn
-gador-mod uninstall privacy-shield
-
-# 卸载并彻底清除配置文件
-gador-mod uninstall privacy-shield --purge
-```
+> 如需自行开发、签名并接入新的自定义模块（含为模块定义自定义设置项 `settingsSchema`），请参阅 [自定义模块开发与签名指南](module-developer-guide.md)。
 
 ---
 
@@ -165,18 +140,13 @@ gador-ctl page open sp_1 https://example.com
 # 3. 人工接管与释放
 gador-ctl takeover request sp_1 --reason captcha
 gador-ctl takeover release sp_1
-
-# 4. 隐私与指纹防护模块（需先 gador-mod install privacy-shield）
-gador-ctl privacy get
-gador-ctl privacy set --level strict
-gador-ctl privacy audit pg_1
 ```
 
 ---
 
 ## 6. 常见排障
 
-1. **升级或安装新模块后未看到变化**：请完全关闭所有旧的 `gador` 桌面窗口后再重新运行 `gador --desktop`（`install-local.sh` 会自动重启旧的 `gador-ui` 桥接进程，但已运行的 Chromium 进程需要重启以加载新挂载的独立扩展）。
-2. **`privacy_shield_set` 或 `POST /api/privacy-shield` 返回 `ERR_MODULE_NOT_INSTALLED`**：说明尚未安装或已停用 `privacy-shield` 模块，执行 `gador-mod install privacy-shield` 或 `gador-mod enable privacy-shield` 即可。
+1. **升级或加入新模块后未看到变化**：请完全关闭所有旧的 `gador` 桌面窗口后再重新运行 `gador --desktop`（`install-local.sh` 会自动重启旧的 `gador-ui` 桥接进程，但已运行的 Chromium 进程需要重启以加载新挂载的模块扩展）。
+2. **修改某模块自定义设置返回 `ERR_MODULE_NOT_INSTALLED`**：说明对应模块尚未加入或当前处于停用状态；只有当对应模块安装并启用后，系统才会开放该模块的自定义设置权限。
 3. **无窗口守护模式报 Wayland 图形错误**：在纯无头 CI/SSH 环境下启动守护进程请加 `--ozone-platform=headless --no-sandbox --disable-gpu`。
-4. **隧道断开后网页全部无法访问**：检查当前是否处于 `strict_tunnel` + `failClosed: true` 模式；这是防 IP 泄漏的主动 Kill-Switch 保护，可在 VPN 面板修复隧道节点或切回 `direct_only` / 跟随宿主机代理。
+4. **隧道断开后网页全部无法访问**：检查当前是否处于 `strict_tunnel` + `failClosed: true` 模式；这是防 IP 泄漏的主动 Kill-Switch 保护，可通过 `gador-ctl network set --mode direct_only` 恢复直连。

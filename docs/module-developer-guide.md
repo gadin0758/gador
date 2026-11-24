@@ -1,25 +1,26 @@
 # Gador 模块（插件）分类、方法规范、安全验证与开发手册
 
 本文档是面向开发者与高级用户的 **Gador 模块开发与操作规范权威手册**，完整定义：
-1. **安全准入与分级验证规范**（为什么普通设置页不直接暴露安装按钮；为什么 `vpn` 与 `privacy-shield` 属于网络安全核心验证等级 `critical`）
+1. **安全准入与分级验证规范**（为什么普通设置页不直接暴露安装按钮；为什么涉及网络出口或指纹防护的高敏模块属于 `securityTier: "critical"`）
 2. **源码明文 + 仅重要资料加密原则**（`openModuleSecretVault` AES-256-GCM）
 3. **默认保留 Chromium 原生 Cookie 策略 + 取消/覆写原生 Cookie 的标准接口指南**
-4. **6 大模块种类、7 个标准生命周期方法、5 大互斥槽位与等待（⏳）/ 禁止（🚫）交互规范**
-5. **模块对网页的全部可执行操作清单与代码示例**（加载期注入、网络头治理、DOM 交互、弹窗/标签移交、设置页 UI 与硬安全红线）
-6. **从零制作、签名、验证、安装与排障的完整 6 步实操教程**
+4. **模块驱动的用户自定义设置权限规范（`settingsSchema`）**：仅当对应模块加入并启用后，按模块内实际功能动态向用户开放自定义设置权限
+5. **6 大模块种类、7 个标准生命周期方法、5 大互斥槽位与等待（⏳）/ 禁止（🚫）交互规范**
+6. **模块对网页的全部可执行操作清单与代码示例**（加载期注入、网络头治理、DOM 交互、弹窗/标签移交、设置页 UI 与硬安全红线）
+7. **从零制作、签名、验证、安装与排障的完整 6 步实操教程**
 
 ---
 
-## 1. 安全准入边界与网络安全重点验证（`securityTier: "critical"`）
+## 1. 安全准入边界与高敏模块重点验证（`securityTier: "critical"`）
 
 ### 1.1 普通扩展 vs. Gador 独立高权限模块
 - **普通 Chromium 扩展**（如 Chrome Web Store 扩展）：按浏览器常规机制自由安装，不受本模块验证门禁约束。
-- **Gador 独立模块**（官方 `vpn`、`privacy-shield` 以及用户自制的自定义模块）：
-  - **禁止在普通浏览器设置页向用户直接展示「一键安装模块」按钮**——未安装时设置页保持精简，避免非授权人员误点或被诱导安装高权限模块；
-  - 统一通过终端 `gador-mod` 完成签名校验与人工确认安装，普通用户无法绕过验证流程静默安装。
+- **Gador 独立模块**（包括开发者自制的网络/指纹/安全/自动化等自定义模块）：
+  - **禁止在普通浏览器设置页向用户直接展示「一键安装模块」按钮**——未加入对应模块时设置页保持精简，不暴露无关设置项，避免非授权人员误点或被诱导安装高权限模块；
+  - 统一通过终端 `gador-mod` 完成签名校验与人工确认后加入，普通用户无法绕过验证流程静默安装。
 
-### 1.2 网络安全核心模块（`vpn` 与 `privacy-shield`）重点验证机制
-由于 **`vpn`（网络出口与路由）** 与 **`privacy-shield`（浏览器环境与请求头防泄漏）** 直接涉及网络安全，系统将其（以及所有占用 `network-egress` / `fingerprint-engine` / `dns-resolver` / `cookie-policy` 槽位的自定义模块）标记为 **`securityTier: "critical"`**，强制执行四重防线：
+### 1.2 网络安全高敏模块重点验证机制
+凡涉及网络出口/代理路由（如 VPN 类模块）或浏览器环境/指纹防泄漏（如指纹防护类模块），以及所有占用 `network-egress` / `fingerprint-engine` / `dns-resolver` / `cookie-policy` 互斥槽位的自定义模块，系统均将其标记为 **`securityTier: "critical"`**（注：发行仓库本身不附带 VPN 或指纹模块包，如需此类能力请按本手册自行开发与签名），强制执行四重防线：
 
 1. **Ed25519 数字签名 + 全文件 SHA-256 清单核验**：模块目录内每一个文件都必须与 `signature.json` 完全一致，发布者公钥必须位于信任密钥环（内置 `modules/trusted-keys.json` 或用户显式信任的 `~/.config/gador/trusted-module-keys.json`），禁止符号链接与多余未签名文件；
 2. **人工两步验证 + 强烈建议启用本机安装密码锁**：安装时必须人工核对发布者、SHA-256 摘要并输入 120 秒单次有效确认码（或 CLI `--confirm-digest <hex>`）；执行 `gador-mod auth set-passphrase` 开启 `scrypt` 密码锁后，任何安装均须同步验密；
@@ -60,7 +61,7 @@ vault.deleteSecret("proxy_password");
 
 ### 3.1 默认行为承诺
 - **默认情况**：Gador 始终使用 **Chromium 原生 Cookie 引擎与存储策略**（对应原生设置页 `chrome://settings/cookies`）。
-- **加入模块后依旧保留**：安装 `vpn`、`privacy-shield` 或任意自定义模块后，**绝不破坏或默认关闭 Chromium 自带的 Cookie 功能**（确保日常网站登录态、Google 账号同步与 `shared` 空间无缝可用）。
+- **加入模块后依旧保留**：加入任意自定义模块后，**绝不破坏或默认关闭 Chromium 自带的 Cookie 功能**（确保日常网站登录态、Google 账号同步与 `shared` 空间无缝可用）。
 
 ### 3.2 如果开发者/用户希望取消或覆写 Chromium 自带 Cookie 功能，请使用以下标准接口
 
@@ -97,6 +98,84 @@ await chrome.declarativeNetRequest.updateDynamicRules({
 
 ---
 
+## 3.5 模块驱动的用户自定义设置权限规范（`settingsSchema`）
+
+Gador 赋予用户自定义模块设置的权限，但严格遵守 **「有对应模块加入才开放、严格按模块内实际功能添加」** 的授权原则：
+
+1. **前置权限门禁**：
+   - 仅当目标模块已通过 Ed25519 签名验证安装并处于 `enabled: true` 状态时，用户才能查看与修改该模块的自定义设置；
+   - 未加入或已停用对应模块时，`GET /api/custom-settings` 不暴露该模块面板，`GET/POST/DELETE /api/modules/:id/settings` 与 `gador-mod settings <id>` 均返回 `409 ERR_MODULE_NOT_INSTALLED`。
+2. **按模块内功能声明 `settingsSchema`**：
+   - 在模块 `module.json` 中声明 `settingsSchema` 数组，每一项对应模块内的一个真实功能配置：
+     - 支持类型：`boolean`（开关）、`select`（分段/枚举选项）、`number`（带 `min`/`max` 范围校验）、`string`（带 `maxLength` 长度限制）；
+     - 支持声明 `feature`（归属功能名）、`slot`（呈现位置，默认 `"ai"`）与 `mutuallyExclusiveWith`（模块内互斥开关列表，同时开启时返回 `409 ERR_SETTING_CONFLICT` 并在设置页显示 `🚫 冲突禁止`）；
+   - 严禁写入 `settingsSchema` 中未声明的任意键（返回 `400 ERR_INVALID_SETTING`）；敏感凭据请使用第 2 节的 `openModuleSecretVault`，不要放在明文设置项中。
+3. **动态呈现与持久化**：
+   - 用户修改后的非敏感配置持久化于 `0600` 权限的 `~/.config/gador/module-settings/<moduleId>.json`；
+   - 设置页自动按 `settingsSchema` 生成交互卡片（带 `⏳` 同步等待与 `🚫` 互斥锁定状态，且提供一键「恢复默认」）。
+
+**`module.json` 中声明 `settingsSchema` 的完整示例**：
+```json
+"settingsSchema": [
+  {
+    "key": "strictMode",
+    "label": "严格过滤模式",
+    "description": "启用更严格的规则匹配策略",
+    "feature": "filter-engine",
+    "slot": "ai",
+    "type": "boolean",
+    "default": false,
+    "mutuallyExclusiveWith": ["compatMode"]
+  },
+  {
+    "key": "compatMode",
+    "label": "兼容直通模式",
+    "description": "优先保障站点兼容性（与严格过滤模式互斥）",
+    "feature": "filter-engine",
+    "slot": "ai",
+    "type": "boolean",
+    "default": true,
+    "mutuallyExclusiveWith": ["strictMode"]
+  },
+  {
+    "key": "logLevel",
+    "label": "审计日志级别",
+    "feature": "audit",
+    "slot": "ai",
+    "type": "select",
+    "default": "info",
+    "options": [
+      { "value": "warn", "label": "仅警告" },
+      { "value": "info", "label": "标准" },
+      { "value": "debug", "label": "详细" }
+    ]
+  },
+  {
+    "key": "maxRetries",
+    "label": "最大重试次数",
+    "feature": "scheduler",
+    "slot": "ai",
+    "type": "number",
+    "default": 3,
+    "min": 0,
+    "max": 10
+  }
+]
+```
+
+**已启用模块的自定义设置读写方式**：
+```bash
+# 查看当前所有已启用模块向用户开放的自定义设置面板
+gador-mod settings list
+
+# 读取、修改、重置指定已启用模块的自定义设置
+gador-mod settings my-custom-mod get
+gador-mod settings my-custom-mod set logLevel debug
+gador-mod settings my-custom-mod reset
+```
+
+---
+
 ## 4. 模块种类、标准方法、互斥冲突与等待/禁止标识规范
 
 可通过 `gador-mod spec` 实时查看机器可读的完整规范 JSON（源码：[modules/schema.mjs](../modules/schema.mjs)）。
@@ -105,8 +184,8 @@ await chrome.declarativeNetRequest.updateDynamicRules({
 
 | `category` | 中文名称 | 适用范围 |
 | :--- | :--- | :--- |
-| `network` | 网络与隧道 | 独立 VPN 档案、代理路由、DoH、宿主机代理联动（如官方 `vpn`） |
-| `privacy` | 隐私与指纹防护 | Canvas/WebGL/Audio/DOMRect 扰动、`Sec-GPC`、环境体检（如官方 `privacy-shield`） |
+| `network` | 网络与隧道 | 自定义代理、隧道档案、DoH 解析与宿主机代理联动模块（如网络出口类模块） |
+| `privacy` | 隐私与指纹防护 | 自定义反指纹扰动、追踪拦截、`Sec-GPC` 与环境体检模块（如隐私防护类模块） |
 | `identity` | 身份与会话容器 | 多账号容器、临时会话配置、角色环境切换 |
 | `automation` | AI 自动化与站点增强 | 站点语义插件、DOM 感知辅助、受控工作流工具 |
 | `appearance` | 外观与光场主题 | 自定义光场预设、侧边栏皮肤、布局增强 |
@@ -146,8 +225,8 @@ await chrome.declarativeNetRequest.updateDynamicRules({
 
 | 互斥槽位 ID | 含义 | 说明 |
 | :--- | :--- | :--- |
-| `network-egress` | 浏览器网络出口槽位 | 同一时间仅允许 1 个 VPN/路由管理模块启用（官方 `vpn` 占用） |
-| `fingerprint-engine` | 反指纹与环境伪装槽位 | 同一时间仅允许 1 个 `MAIN` world 反指纹模块启用（官方 `privacy-shield` 占用） |
+| `network-egress` | 浏览器网络出口槽位 | 同一时间仅允许 1 个网络出口/代理路由管理模块启用 |
+| `fingerprint-engine` | 反指纹与环境伪装槽位 | 同一时间仅允许 1 个 `MAIN` world 反指纹模块启用 |
 | `cookie-policy` | Cookie 策略接管槽位 | 同一时间仅允许 1 个覆写/屏蔽原生 Cookie 的模块启用 |
 | `dns-resolver` | 独立 DNS / DoH 槽位 | 同一时间仅允许 1 个模块接管独立 DNS/DoH 解析 |
 | `newtab-override` | 新标签页覆盖槽位 | 同一时间仅允许 1 个模块覆盖 `chrome://newtab` |
@@ -237,8 +316,9 @@ gador-mod trust add my-dev-v1 ~/.config/gador/my-keys/my-dev-v1.public.pem --lab
 gador-mod sign ./my-fp-mod --key ~/.config/gador/my-keys/my-dev-v1.private.pem --key-id my-dev-v1
 gador-mod verify ./my-fp-mod
 
-# 第 6 步：通过统一安全验证流程安装整合（若与已启用的 privacy-shield 冲突，需先停用对方或加 --disabled）
+# 第 6 步：通过统一安全验证流程加入整合（若与已启用的同槽位模块冲突，需先停用对方或加 --disabled）
 gador-mod install ./my-fp-mod
+gador-mod settings my-fp-mod get
 gador-mod doctor
 ```
 
@@ -254,4 +334,7 @@ gador-mod doctor
 | `ERR_INSTALL_VERIFICATION_REQUIRED` | `403` | 缺少人工确认码或 `--confirm-digest`；拒绝静默安装 |
 | `ERR_INSTALL_VERIFICATION_FAILED` | `403` | 确认码错误、挑战超时（120s）或本机安装密码错误 |
 | `ERR_MODULE_CONFLICT` | `409` | 与已启用模块共享 `exclusiveGroups`、显式 `conflictsWith` 或缺少 `requires` 依赖；需先停用冲突模块 |
-| `ERR_MODULE_NOT_INSTALLED` | `409` | 模块尚未安装或当前已停用 |
+| `ERR_MODULE_NOT_INSTALLED` | `409` | 模块尚未安装或当前已停用（此时不开放其自定义设置权限） |
+| `ERR_MODULE_NO_CUSTOM_SETTINGS` | `404` | 该模块未在 `module.json` 中声明任何 `settingsSchema` 自定义设置项 |
+| `ERR_INVALID_SETTING` | `400` | 写入了未声明的设置键、类型不匹配或超出 `min`/`max`/`options` 范围 |
+| `ERR_SETTING_CONFLICT` | `409` | 同时开启了该模块 `settingsSchema` 中声明为 `mutuallyExclusiveWith` 的互斥设置项 |

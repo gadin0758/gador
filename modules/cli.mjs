@@ -5,14 +5,18 @@ import readline from "node:readline/promises";
 
 import {
   execModuleInSandbox,
+  getModuleCustomSettings,
   getModulesState,
   installModule,
+  listActiveCustomSettingsPanels,
   probeModuleInSandbox,
   requestModuleInstallChallenge,
+  resetModuleCustomSettings,
   resolveEnabledExtensionDirs,
   runModulesDoctor,
   setModuleEnabled,
   uninstallModule,
+  updateModuleCustomSettings,
 } from "./registry.mjs";
 import {
   getSandboxStatus,
@@ -61,6 +65,8 @@ Usage:
   gador-mod sandbox probe <moduleId>
   gador-mod sandbox exec <moduleId> <method> [jsonArgs]
   gador-mod sandbox stop [moduleId]
+  gador-mod settings list [--json]
+  gador-mod settings <moduleId> [get|set <key> <value>|reset] [--json]
   gador-mod extensions
   gador-mod doctor [--json]
 `);
@@ -265,6 +271,17 @@ async function main() {
         requires: [],
         mutuallyExclusiveFeatures: [],
       },
+      settingsSchema: [
+        {
+          key: "enabledFeature",
+          label: "启用模块默认功能",
+          description: "仅在安装并启用本模块后对用户开放的自定义开关示例",
+          feature: "core",
+          slot: "ai",
+          type: "boolean",
+          default: true,
+        },
+      ],
     };
     fs.writeFileSync(
       path.join(targetDir, "module.json"),
@@ -577,6 +594,41 @@ gador-mod install "${targetDir}"
       return;
     }
     throw new Error("Usage: gador-mod sandbox <status|probe|exec|stop>");
+  }
+
+  if (cmd === "settings") {
+    if (!sub || sub === "list") {
+      const panels = listActiveCustomSettingsPanels();
+      process.stdout.write(JSON.stringify(panels, null, 2) + "\n");
+      return;
+    }
+    const modId = sub;
+    const action = arg3 || "get";
+    if (action === "get") {
+      const res = getModuleCustomSettings(modId);
+      process.stdout.write(JSON.stringify(res, null, 2) + "\n");
+      return;
+    }
+    if (action === "reset") {
+      const res = resetModuleCustomSettings(modId, { actor: "user" });
+      process.stdout.write(JSON.stringify(res, null, 2) + "\n");
+      return;
+    }
+    if (action === "set") {
+      const key = positionals[3];
+      const rawValue = positionals[4];
+      if (!key || rawValue === undefined) {
+        throw new Error("Usage: gador-mod settings <moduleId> set <key> <value>");
+      }
+      let parsedVal = rawValue;
+      if (rawValue === "true") parsedVal = true;
+      else if (rawValue === "false") parsedVal = false;
+      else if (/^-?\d+(\.\d+)?$/.test(rawValue)) parsedVal = Number(rawValue);
+      const res = updateModuleCustomSettings(modId, { [key]: parsedVal }, { actor: "user" });
+      process.stdout.write(JSON.stringify(res, null, 2) + "\n");
+      return;
+    }
+    throw new Error("Usage: gador-mod settings <list|<moduleId> [get|set <key> <value>|reset]>");
   }
 
   throw new Error(`Unknown command: ${cmd}`);

@@ -81,6 +81,7 @@ const state = {
     hideAutomationHints: true,
   },
   modulesState: { registryPath: "", installRoot: "", passphraseEnabled: false, modules: [] },
+  customSettingsPanels: [],
   busyOps: {},
   skillInfo: null,
   vpnForm: {
@@ -718,7 +719,7 @@ function makeSegmented(options, current, onPick, compact = false, opts = {}) {
 }
 
 async function refreshAllData() {
-  const [appRes, stRes, vpnRes, hostProxyRes, skillRes, tabsRes, seRes, psRes, modRes] = await Promise.allSettled([
+  const [appRes, stRes, vpnRes, hostProxyRes, skillRes, tabsRes, seRes, psRes, modRes, customSettingsRes] = await Promise.allSettled([
     apiRpc("ui.getAppearance"),
     apiGet("/api/state"),
     apiGet("/api/vpn/store"),
@@ -728,6 +729,7 @@ async function refreshAllData() {
     apiGet("/api/search-engine"),
     apiGet("/api/privacy-shield"),
     apiGet("/api/modules"),
+    apiGet("/api/custom-settings"),
   ]);
   if (appRes.status === "fulfilled" && appRes.value) {
     state.appearance = {
@@ -751,6 +753,9 @@ async function refreshAllData() {
   }
   if (modRes.status === "fulfilled" && Array.isArray(modRes.value?.modules)) {
     state.modulesState = modRes.value;
+  }
+  if (customSettingsRes.status === "fulfilled" && Array.isArray(customSettingsRes.value?.panels)) {
+    state.customSettingsPanels = customSettingsRes.value.panels;
   }
   if (typeof sendWithPromise === "function") {
     try {
@@ -1237,6 +1242,152 @@ function renderAiView(root) {
       ]),
     ])
   );
+
+  // Dynamically render custom settings ONLY when matching modules declaring settingsSchema are installed & enabled
+  renderModuleCustomSettingsCards(root, "ai");
+}
+
+function renderModuleCustomSettingsCards(root, targetSlot = null) {
+  const panels = (state.customSettingsPanels || []).filter((panel) => {
+    if (!Array.isArray(panel.schema) || panel.schema.length === 0) return false;
+    if (!targetSlot) return true;
+    return panel.schema.some((f) => (f.slot || "ai") === targetSlot);
+  });
+  if (panels.length === 0) return;
+
+  root.appendChild(
+    el("div", {
+      class: "gd-section-label",
+      text: "已加入模块的自定义设置（按模块功能动态授权）",
+    })
+  );
+
+  for (const panel of panels) {
+    const fields = targetSlot
+      ? panel.schema.filter((f) => (f.slot || "ai") === targetSlot)
+      : panel.schema;
+    if (fields.length === 0) continue;
+    const busyKey = `custom-settings:${panel.moduleId}`;
+    const isBusy = Boolean(state.busyOps[busyKey]);
+
+    const applySettingPatch = async (patch, label) => {
+      if (state.busyOps[busyKey]) return;
+      state.busyOps[busyKey] = true;
+      renderGadorPanel();
+      try {
+        const res = await apiPost(
+          `/api/modules/${encodeURIComponent(panel.moduleId)}/settings`,
+          { values: patch }
+        );
+        if (res?.values) panel.values = res.values;
+        await refreshAllData();
+        showToast(`已更新模块「${panel.moduleName}」自定义设置：${label}`);
+      } catch (e) {
+        showToast(`设置未生效：${e.message}`, true);
+      } finally {
+        delete state.busyOps[busyKey];
+        renderGadorPanel();
+      }
+    };
+
+    const rows = [
+      el("div", { class: "gd-item" }, [
+        el("div", { class: "gd-item-info" }, [
+          el("strong", { text: `${panel.moduleName}（${panel.moduleId} v${panel.version}）` }),
+          el("span", {
+            text: panel.description || "以下自定义设置项由该已启用模块的功能清单动态开放。",
+          }),
+        ]),
+        el("div", { class: "gd-actions" }, [
+          isBusy
+            ? el("span", { class: "gd-pill waiting", text: "⏳ 同步设置中…" })
+            : el("span", { class: "gd-pill ok", text: `已授权 ${fields.length} 项` }),
+          el("button", {
+            type: "button",
+            class: "gd-btn",
+            disabled: isBusy ? true : undefined,
+            text: isBusy ? "⏳ 等待中…" : "恢复默认",
+            onClick: async () => {
+              if (state.busyOps[busyKey]) return;
+              state.busyOps[busyKey] = true;
+              renderGadorPanel();
+              try {
+                await apiDelete(`/api/modules/${encodeURIComponent(panel.moduleId)}/settings`);
+                await refreshAllData();
+                showToast(`已恢复模块「${panel.moduleName}」默认自定义设置`);
+              } catch (e) {
+                showToast(`重置失败：${e.message}`, true);
+              } finally {
+                delete state.busyOps[busyKey];
+                renderGadorPanel();
+              }
+            },
+          }),
+        ]),
+      ]),
+    ];
+
+    for (const field of fields) {
+      const curVal = panel.values?.[field.key] ?? field.default;
+      const conflictHit = (field.mutuallyExclusiveWith || []).find(
+        (ck) => panel.values?.[ck] === true && curVal !== true
+      );
+      const conflictField = conflictHit
+        ? panel.schema.find((f) => f.key === conflictHit)
+        : null;
+      const blocked = Boolean(conflictHit);
+      const blockedText = blocked
+        ? `🚫 冲突禁止：与「${conflictField?.label || conflictHit}」互斥，请先关闭对方`
+        : "";
+
+      let control = null;
+      if (field.type === "boolean") {
+        control = makeToggle(Boolean(curVal), field.label, (next) => applySettingPatch({ [field.key]: next }, field.label), {
+          disabled: isBusy || blocked,
+          blockedMessage: blockedText,
+        });
+      } else if (field.type === "select") {
+        control = makeSegmented(
+          field.options.map((o) => ({ value: o.value, label: o.label })),
+          String(curVal),
+          (v) => applySettingPatch({ [field.key]: v }, field.label),
+          { disabled: isBusy }
+        );
+      } else {
+        const inp = el("input", {
+          class: "gd-input",
+          type: field.type === "number" ? "number" : "text",
+          value: String(curVal ?? ""),
+          disabled: isBusy ? true : undefined,
+        });
+        control = el("div", { class: "gd-actions" }, [
+          inp,
+          el("button", {
+            type: "button",
+            class: "gd-btn primary",
+            disabled: isBusy ? true : undefined,
+            text: isBusy ? "⏳ 保存中…" : "保存",
+            onClick: () => {
+              const nextVal = field.type === "number" ? Number(inp.value) : inp.value;
+              applySettingPatch({ [field.key]: nextVal }, field.label);
+            },
+          }),
+        ]);
+      }
+
+      rows.push(
+        el("div", { class: `gd-item${blocked ? " is-blocked" : ""}` }, [
+          el("div", { class: "gd-item-info" }, [
+            el("strong", { text: blocked ? `🚫 ${field.label}` : field.label }),
+            el("span", { text: blocked ? blockedText : field.description || `功能域：${field.feature}` }),
+          ]),
+          control,
+        ])
+      );
+    }
+
+    root.appendChild(el("section", { class: "gd-card" }, rows));
+  }
 }
 
 function getModuleEntry(id) {

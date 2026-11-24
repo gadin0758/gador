@@ -14,15 +14,19 @@ import {
 } from "../protocol/privacy-shield-store.mjs";
 import {
   execModuleInSandbox,
+  getModuleCustomSettings,
   getModulesState,
   installModule,
   isModuleEnabled,
   isModuleInstalled,
+  listActiveCustomSettingsPanels,
   probeModuleInSandbox,
   requestModuleInstallChallenge,
+  resetModuleCustomSettings,
   runModulesDoctor,
   setModuleEnabled,
   uninstallModule,
+  updateModuleCustomSettings,
 } from "../../modules/registry.mjs";
 import {
   getSandboxStatus,
@@ -686,6 +690,60 @@ export async function startGadorUiServer({
           });
         }
         return;
+      }
+
+      // ---- Module-Gated User Custom Settings Routes ----
+      if (req.method === "GET" && url.pathname === "/api/custom-settings") {
+        sendJson(res, 200, listActiveCustomSettingsPanels());
+        return;
+      }
+
+      if (
+        url.pathname.startsWith("/api/modules/") &&
+        url.pathname.endsWith("/settings")
+      ) {
+        const modId = decodeURIComponent(
+          url.pathname.slice("/api/modules/".length, -"/settings".length)
+        );
+        try {
+          if (req.method === "GET") {
+            sendJson(res, 200, getModuleCustomSettings(modId));
+            return;
+          }
+          if (req.method === "POST") {
+            const body = await readJsonBody(req);
+            const patch =
+              body && typeof body.values === "object" && body.values
+                ? body.values
+                : body;
+            const actor = body?.actor === "ai" ? "ai" : "user";
+            const updated = updateModuleCustomSettings(modId, patch, { actor });
+            sendJson(res, 200, updated);
+            return;
+          }
+          if (req.method === "DELETE") {
+            const reset = resetModuleCustomSettings(modId, { actor: "user" });
+            sendJson(res, 200, reset);
+            return;
+          }
+        } catch (err) {
+          const code = err.code || "ERR_INTERNAL";
+          const status =
+            code === "ERR_MODULE_NOT_INSTALLED" || code === "ERR_SETTING_CONFLICT"
+              ? 409
+              : code === "ERR_MODULE_NO_CUSTOM_SETTINGS"
+                ? 404
+                : code === "ERR_INVALID_SETTING"
+                  ? 400
+                  : 500;
+          sendJson(res, status, {
+            ok: false,
+            code,
+            error: err.message,
+            conflictKeys: err.conflictKeys || undefined,
+          });
+          return;
+        }
       }
 
       // ---- VPN-Only Open Archive & Mandatory Pre-Modify Backup Endpoints ----
