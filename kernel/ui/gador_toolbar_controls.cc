@@ -96,7 +96,7 @@ class GadorIconButton : public views::Button {
                             : SkColorSetARGB(215, 160, 174, 204));
 
     if (kind_ == Kind::kLayout) {
-      // Zen sidebar / layout toggle wireframe
+      // Vertical sidebar / layout toggle wireframe
       canvas->DrawRoundRect(gfx::RectF(6, 7, 16, 14), 3.0f, stroke);
       canvas->DrawLine(gfx::PointF(11.5f, 7.0f), gfx::PointF(11.5f, 21.0f),
                        stroke);
@@ -444,7 +444,7 @@ GadorToolbarControls::GadorToolbarControls(Profile* profile,
       callbacks_.on_toggle_handover_active_tab));
 
   const auto& ui_cfg = GadorNativeUiConfig::GetInstance()->Get();
-  // Native Zen vertical sidebar <-> Chrome top bar layout switcher
+  // Native vertical sidebar <-> top tab bar layout switcher
   if (ui_cfg.show_layout_toggle) {
     AddChildView(std::make_unique<GadorIconButton>(
         GadorIconButton::Kind::kLayout, u"切换竖向侧边栏 / 顶部标签栏",

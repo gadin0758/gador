@@ -952,28 +952,28 @@ function renderAppearanceFused(root) {
       el("div", { class: "gd-item" }, [
         el("div", { class: "gd-item-info" }, [
           el("strong", { text: "标签栏排布方式" }),
-          el("span", { text: "在 Zen 竖向侧边栏与顶部横向标签栏间无缝切换" }),
+          el("span", { text: "在竖向侧边栏与顶部横向标签栏间无缝切换" }),
         ]),
         makeSegmented(
           [
-            { value: "sidebar", label: "Zen 竖向侧边栏" },
+            { value: "sidebar", label: "竖向侧边栏" },
             { value: "chrome", label: "顶部横向栏" },
           ],
           a.layout === "sidebar" ? "sidebar" : "chrome",
           (val) =>
             applyAppearance(
               { layout: val },
-              val === "sidebar" ? "已切换为 Zen 竖向侧边栏" : "已切换为顶部横向栏"
+              val === "sidebar" ? "已切换为竖向侧边栏" : "已切换为顶部横向栏"
             ),
           true
         ),
       ]),
       el("div", { class: "gd-item" }, [
         el("div", { class: "gd-item-info" }, [
-          el("strong", { text: "Zen 侧边栏紧凑折叠" }),
+          el("strong", { text: "侧边栏紧凑折叠" }),
           el("span", { text: "竖向模式下收窄为图标条，释放更大网页视口" }),
         ]),
-        makeToggle(Boolean(a.compact), "Zen 侧边栏紧凑折叠", (val) =>
+        makeToggle(Boolean(a.compact), "侧边栏紧凑折叠", (val) =>
           applyAppearance({ compact: val }, val ? "已开启紧凑折叠" : "已展开侧边栏")
         ),
       ]),

@@ -1823,7 +1823,7 @@ function renderPersonalization() {
   els.prefThemeLabel.textContent = THEME_LABELS[state.theme] || state.theme;
   els.prefAccentLabel.textContent =
     state.accent === "custom" ? `自定义 ${state.customColor.toUpperCase()}` : ACCENT_LABELS[state.accent] || state.accent;
-  els.prefLayoutLabel.textContent = state.layout === "chrome" ? "Chrome 顶部栏 × 光效" : "Zen 竖向侧边栏";
+  els.prefLayoutLabel.textContent = state.layout === "chrome" ? "顶部横向栏 × 光效" : "竖向侧边栏";
   els.prefFrostLabel.textContent = FROST_LABELS[state.frost] || state.frost;
 
   document.querySelectorAll("[data-set-theme]").forEach((el) => {
@@ -2367,8 +2367,8 @@ function toggleLayout(targetLayout) {
   syncNativeAppearance({ layout: state.layout });
   toast(
     state.layout === "chrome"
-      ? "已切换原生浏览器为 Chrome 顶部标签栏"
-      : "已切换原生浏览器为 Zen 竖向侧边栏",
+      ? "已切换原生浏览器为顶部横向标签栏"
+      : "已切换原生浏览器为竖向侧边栏",
     "ok"
   );
 }

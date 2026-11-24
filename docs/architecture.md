@@ -14,19 +14,7 @@
 
 但传统桌面浏览器（包括 Chromium 自身的 `Browser` + `TabStripModel`）完全是为**人类单焦点视觉交互**设计的。我们要做的，是保留 Chromium 158 经过验证的渲染、网络与安全底座（Blink / V8 / NetworkContext / Profile），在 `chrome/browser/` 与 `content/browser/` 之间**独立构建一套完全面向 Agent 的控制内核 `agent_kernel`**，彻底把「人类日常浏览」与「Agent 自动执行」在控制面和界面层解耦。
 
-### 1.2 行业方案思想拆解与本项目的差异化定位
-
-以下横向总结 2025–2026 主流 AI 浏览器与自动化方案的核心思想（仅提炼思路），并明确本项目自己的方向：
-
-| 参考方向 | 行业代表 | 可借鉴的核心思想 | 局限性（我们要解决的问题） |
-| :--- | :--- | :--- | :--- |
-| **共享状态桌面浏览器** | ego-lite / Comet / Dia | 同进程共享真实登录态、减少重复登录；支持批量代码执行降低 LLM 轮次 | 个人页面与 Agent 页面混杂在同一套主窗口/侧边栏管理体系中；闭源且缺乏 Linux 原生支持 |
-| **原生 Web 标准协议** | **WebMCP**（Chromium 149+） | 网站主动暴露结构化工具（`navigator.modelContext`），从「盲猜 DOM」转向「直接调工具」 | 仅部分新站点支持，必须与通用 DOM/AX 感知层无缝互补 |
-| **协议桥接与深度观测** | Playwright MCP / Chrome DevTools MCP | 标准化 MCP 接口；暴露网络日志、控制台错误、紧凑 AXTree 快照 | 仍依赖外部调试端口（`--remote-debugging-port`）或独立无状态实例，与日常登录环境割裂 |
-| **语义原语与动态脚本** | Browser-Use / Stagehand / agent-browser | 紧凑 `@ref` 语义树 + 确定性/探索性操作分层 + 复合脚本一次执行 | 外挂在浏览器之外，面对跨进程 OOPIF、后台降频、弹窗抢焦点时稳定性受限 |
-| **浏览器扩展伴侣** | Claude in Chrome / Nanobrowser | 直接复用用户当前会话；遇到验证/敏感动作时强调人机协作边界 | 扩展受限于 MV3 Service Worker 休眠、`chrome.debugger` 的 `untrusted` 权限上限、CSP/OOPIF 限制及额外的页面注入痕迹 |
-
-### 1.3 本浏览器的 4 个独有核心方向
+### 1.2 本浏览器的 4 个核心方向
 
 1. **物理隔离但随时可达的「收起态入口 + 专属 Agent 空间」**：
    - 底层数据与界面管理**绝不混杂**：Agent 的所有页面由独立的 `AgentSpaceManager` 托管，永不侵入你的个人标签栏（`TabStripModel`）、个人历史记录与会话恢复。

@@ -87,7 +87,7 @@
           <button class="chrome-tool hidden" id="chrome-ess-network" type="button" data-tone="network" data-health="direct" aria-hidden="true"></button>
           <button class="chrome-tool hidden" id="chrome-ess-activity" type="button" data-tone="activity" aria-hidden="true"></button>
           <span class="chrome-sep" aria-hidden="true"></span>
-          <button class="icon-btn" id="btn-layout-chrome" type="button" aria-label="切换到 Zen 侧边栏" title="切换到 Zen 侧边栏 (Alt+L)">
+          <button class="icon-btn" id="btn-layout-chrome" type="button" aria-label="切换到竖向侧边栏" title="切换到竖向侧边栏 (Alt+L)">
             <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="2.5"/><path d="M6 3v10"/></svg>
           </button>
         </div>
@@ -110,7 +110,7 @@
           <button class="icon-btn" id="btn-refresh" type="button" aria-label="刷新状态" title="刷新状态">
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg>
           </button>
-          <button class="icon-btn" id="btn-layout-sidebar" type="button" aria-label="切换到 Chrome 顶部栏" title="切换到 Chrome 顶部栏 (Alt+L)">
+          <button class="icon-btn" id="btn-layout-sidebar" type="button" aria-label="切换到顶部横向栏" title="切换到顶部横向栏 (Alt+L)">
             <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="2.5"/><path d="M2 6.5h12"/></svg>
           </button>
           <button class="icon-btn" id="btn-compact" type="button" aria-label="紧凑模式" title="紧凑模式 (Ctrl+B)">
@@ -547,7 +547,7 @@
             <div class="hub-title-group">
               <span class="hub-kicker">PERSONALIZATION STUDIO · 核心主展示</span>
               <h1>个性化光场与界面美学</h1>
-              <p>自由定制 Gador 的磨砂质感、光效主题色、日夜间外观以及 Zen 侧边栏 / Chrome 顶部融合布局，所见即所得。</p>
+              <p>自由定制 Gador 的磨砂质感、光效主题色、日夜间外观以及竖向侧边栏 / 顶部横向融合布局，所见即所得。</p>
             </div>
             <div class="hub-actions">
               <button class="btn ghost" id="btn-reset-personal" type="button">恢复默认光效</button>
@@ -644,16 +644,16 @@
                   <span class="card-kicker">INTERFACE LAYOUT</span>
                   <h2>界面布局模式</h2>
                 </div>
-                <span class="status-pill" id="pref-layout-label">Zen 侧边栏</span>
+                <span class="status-pill" id="pref-layout-label">竖向侧边栏</span>
               </div>
-              <p class="card-desc">在 Zen 极简竖向侧边栏与 Chrome 顶部横向标签栏（融合磨砂光效）间无缝切换，也可随时按 <kbd>Alt</kbd> <kbd>L</kbd> 切换。</p>
+              <p class="card-desc">在竖向侧边栏与顶部横向标签栏（融合磨砂光效）间无缝切换，也可随时按 <kbd>Alt</kbd> <kbd>L</kbd> 切换。</p>
               <div class="layout-picker">
                 <button class="layout-card" data-set-layout="sidebar" type="button">
                   <div class="wireframe wf-sidebar" aria-hidden="true">
                     <span class="wf-sb"><i></i><i></i><i></i></span>
                     <span class="wf-main"></span>
                   </div>
-                  <strong>Zen 竖向侧边栏</strong>
+                  <strong>竖向侧边栏</strong>
                   <small>宽阔纵向工作空间 · 沉浸式光场侧栏</small>
                 </button>
                 <button class="layout-card" data-set-layout="chrome" type="button">
@@ -662,13 +662,13 @@
                     <span class="wf-bar"></span>
                     <span class="wf-main"></span>
                   </div>
-                  <strong>Chrome 顶部栏 × 光效</strong>
+                  <strong>顶部横向栏 × 光效</strong>
                   <small>经典横向标签与胶囊地址栏 · 融合流光磨砂</small>
                 </button>
               </div>
               <label class="switch pref-switch">
                 <input type="checkbox" id="pref-compact-toggle" />
-                <span>Zen 侧边栏紧凑模式（自动隐藏，鼠标贴近左边缘唤出 · Ctrl+B）</span>
+                <span>竖向侧边栏紧凑模式（自动隐藏，鼠标贴近左边缘唤出 · Ctrl+B）</span>
               </label>
             </article>
 
@@ -828,8 +828,8 @@
               </div>
               <p class="card-desc">一键初始化 Gador 原生布局（竖向侧边栏 / 顶部栏）、书签栏、光效主题色与 AI 边缘光晕，实时写入 <code>~/.config/gador/native-ui.json</code> 立即生效。</p>
               <div class="account-actions">
-                <button class="btn glow xs" id="btn-init-zen-preset" type="button">初始化为 Zen 竖向布局</button>
-                <button class="btn ghost xs" id="btn-init-chrome-preset" type="button">初始化为 Chrome 顶部布局</button>
+                <button class="btn glow xs" id="btn-init-zen-preset" type="button">初始化为竖向侧边栏布局</button>
+                <button class="btn ghost xs" id="btn-init-chrome-preset" type="button">初始化为顶部横向布局</button>
                 <button class="btn danger-soft xs" id="btn-reset-all-init" type="button">恢复全部默认设置</button>
                 <button class="btn ghost xs" data-open-native="chrome://settings/reset" type="button">原生核心重置</button>
               </div>

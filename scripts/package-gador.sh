@@ -115,7 +115,7 @@ elif [ "${1:-}" = "--desktop" ]; then
   fi
 
   # 2) Launch REAL NATIVE Gador Browser directly in Gador's OWN ~/.config/gador profile (NEVER touches ~/.config/chromium!)
-  #    - Single-layer native C++ Views UI: native AI concentric halo + Stop-AI + Zen Vertical/Chrome Top tabs + Incognito + R Settings
+  #    - Single-layer native C++ Views UI: native AI concentric halo + Stop-AI + Vertical Sidebar/Top Tab Bar + Incognito + R Settings
   #    - Opens cleanly onto Gador's New Tab Page (zero double-chrome, zero 127.0.0.1 in address bar)
   #    - Suppresses stale "Chromium 未正确关闭" crash-restore bubble on unclean restarts
   #    - Hosts AgentIpcServer on $SOCK in the same process for seamless AI MCP/Skill integration

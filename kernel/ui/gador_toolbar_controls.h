@@ -26,7 +26,7 @@ class GadorHandoverButton;
 //  1. Pearlescent concentric luminous AI beacon pill (jumps directly to active AI native tab)
 //  2. Immediate "■ 停止 / ▶ 恢复" button (freezes/resumes AI mutation)
 //  3. One-click "交给 AI / 收回" handover pill for existing user tabs
-//  4. Native Zen Vertical Sidebar <-> Chrome Top Bar toggle button
+//  4. Native Vertical Sidebar <-> Top Tab Bar toggle button
 //  5. Compact native Incognito (隐私窗口) button right beside Settings
 //  6. Compact luminous "R" Gador Settings (fused chrome://settings) button
 class GadorToolbarControls : public views::View {
