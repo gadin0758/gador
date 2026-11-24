@@ -4,7 +4,7 @@
 
 **AI-Agent 原生 Linux Chromium 浏览器**（基于 Chromium `158.0.8127.36` 洁净室内核构建）。
 
-Gador 将日常桌面浏览与 AI 自动化控制面原生融合，提供**桌面无窗口守护模式（`--agent-daemon`）**、**物理隔离的双态 AgentSpace（`shared` / `private`）**、**密码/支付硬围栏与即时人工接管（`USER_ACTIVE`）**、**原生光效界面（Optical Lightfield）**，并将 **独立 VPN 管理** 与 **隐私与指纹防护** 解耦为可由用户按需单独安装与整合的独立模块。
+Gador 将日常桌面浏览与 AI 自动化控制面原生融合，提供**桌面无窗口守护模式（`--agent-daemon`）**、**物理隔离的双态 AgentSpace（`shared` / `private`）**、**密码/支付硬围栏与即时人工接管（`USER_ACTIVE`）**与**原生光效界面（Optical Lightfield）**。
 
 ---
 
