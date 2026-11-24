@@ -79,7 +79,7 @@ test("Plugin Manifest, Universal SDK, Site Plugins, Installer, and gador-ctl CLI
       encoding: "utf8",
     })
   );
-  assert.equal(dryRunOut.installedSkills.length, 3);
+  assert.equal(dryRunOut.installedSkills.length, 5);
   assert.ok(dryRunOut.installedSkills.every((x) => x.dryRun === true));
 
   // 3. Spin up real C++20 UDS daemon for CLI + Universal Plugin SDK E2E checks

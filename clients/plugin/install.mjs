@@ -16,6 +16,8 @@ const KNOWN_SKILL_TARGETS = {
   claude: path.join(os.homedir(), ".claude", "skills", "gador"),
   codex: path.join(os.homedir(), ".codex", "skills", "gador"),
   agents: path.join(os.homedir(), ".agents", "skills", "gador"),
+  opencode: path.join(os.homedir(), ".config", "opencode", "skills", "gador"),
+  antigravity: path.join(os.homedir(), ".gemini", "config", "skills", "gador"),
 };
 
 function parseArgs(argv) {

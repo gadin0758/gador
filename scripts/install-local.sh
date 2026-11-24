@@ -63,7 +63,7 @@ echo "[5/5] Syncing Agent Skills and MCP registrations to installed binary ..."
 node "$REPO_ROOT/clients/plugin/install.mjs" --all >/dev/null
 # Restart any running old gador-ui server so new API routes take effect immediately
 pkill -f "^node $INSTALL_HOME/clients/ui/server.mjs" 2>/dev/null || true
-node -e '
+REPO_ROOT_FOR_SKILL="$REPO_ROOT" node -e '
 const fs = require("fs");
 const path = require("path");
 const mcpBin = path.join(process.env.HOME, ".local", "bin", "gador-mcp");
@@ -87,10 +87,59 @@ if (fs.existsSync(codexPath)) {
   }
   fs.writeFileSync(codexPath, toml, { mode: 0o600 });
 }
+
+// OpenCode (~/.config/opencode/opencode.jsonc)
+const opencodePath = path.join(process.env.HOME, ".config", "opencode", "opencode.jsonc");
+if (fs.existsSync(opencodePath)) {
+  try {
+    const oc = JSON.parse(fs.readFileSync(opencodePath, "utf8"));
+    oc.mcp = oc.mcp || {};
+    oc.mcp.gador = { command: [mcpBin], enabled: true, type: "local" };
+    fs.writeFileSync(opencodePath, JSON.stringify(oc, null, 2) + "\n", { mode: 0o600 });
+  } catch {}
+}
+
+// Antigravity / AGY global (~/.gemini/config/mcp_config.json)
+const agyGlobalDir = path.join(process.env.HOME, ".gemini", "config");
+if (fs.existsSync(agyGlobalDir)) {
+  const agyMcpPath = path.join(agyGlobalDir, "mcp_config.json");
+  let cfg = {};
+  try {
+    const raw = fs.existsSync(agyMcpPath) ? fs.readFileSync(agyMcpPath, "utf8").trim() : "";
+    if (raw) cfg = JSON.parse(raw);
+  } catch { cfg = {}; }
+  cfg.mcpServers = cfg.mcpServers || {};
+  cfg.mcpServers.gador = { command: mcpBin, args: [] };
+  fs.writeFileSync(agyMcpPath, JSON.stringify(cfg, null, 2) + "\n", { mode: 0o600 });
+}
+
+// T3 Code Antigravity provider configs (if present)
+const t3AgyRoot = path.join(process.env.HOME, ".t3", "userdata", "providers", "antigravity");
+if (fs.existsSync(t3AgyRoot)) {
+  for (const entry of fs.readdirSync(t3AgyRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const cfgDir = path.join(t3AgyRoot, entry.name, "config");
+    if (!fs.existsSync(cfgDir)) continue;
+    const mcpPath = path.join(cfgDir, "mcp_config.json");
+    let cfg = {};
+    try {
+      const raw = fs.existsSync(mcpPath) ? fs.readFileSync(mcpPath, "utf8").trim() : "";
+      if (raw) cfg = JSON.parse(raw);
+    } catch { cfg = {}; }
+    cfg.mcpServers = cfg.mcpServers || {};
+    cfg.mcpServers.gador = { command: mcpBin, args: [] };
+    fs.writeFileSync(mcpPath, JSON.stringify(cfg, null, 2) + "\n", { mode: 0o600 });
+    const skillDest = path.join(cfgDir, "skills", "gador");
+    const skillSrc = path.join(process.env.REPO_ROOT_FOR_SKILL || "", "clients", "skills", "gador");
+    if (fs.existsSync(skillSrc)) {
+      fs.cpSync(skillSrc, skillDest, { recursive: true, force: true });
+    }
+  }
+}
 '
 
 # Initialize Gador native profile defaults (Bookmark Bar visible, Forward button visible, native-ui.json ready)
-node -e '
+REPO_ROOT_FOR_SKILL="$REPO_ROOT" node -e '
 const fs = require("fs");
 const path = require("path");
 const cfgBase = process.env.XDG_CONFIG_HOME || path.join(process.env.HOME, ".config");
