@@ -1,7 +1,7 @@
 # `gador` 架构设计文档（RFC-001）
 
-> **定位**：面向 AI Agent 的 Linux-First 原生浏览器内核架构（基于 Chromium `158.0.8127.36` 源码定制）。  
-> **设计原则**：只借鉴行业方案的架构思想，**零代码抄袭**；不重复造 HTML/CSS/JS 渲染引擎，而是在 Chromium 之上**重新构建一套以 AI Agent 为第一公民的控制内核（Agent Control Kernel）**。
+> **初衷**：因为需要一个可以介入、适合 AI 使用的浏览器，但一直没有找到自己喜欢的，所以基于 Chromium `158.0.8127.36` 自己动手写了一套方便 AI 接入和控制的浏览器。  
+> **实现方式**：不重复造 HTML/CSS/JS 渲染引擎，而是在 Chromium 之上自己写了一套面向 AI Agent 的控制内核（Agent Control Kernel）。
 
 ---
 
@@ -70,7 +70,7 @@ flowchart TB
             DockBtn["极简收起态小按钮 / 微章<br/>(仅显示状态，点击随时展开)"]
         end
 
-        subgraph AgentKernel["自研 Agent 控制内核 (chrome/browser/agent_kernel/)"]
+        subgraph AgentKernel["自己写的 Agent 控制内核 (chrome/browser/agent_kernel/)"]
             IPC["AgentIpcServer<br/>(ChromeBrowserMainExtraParts)"]
             Manager["AgentSpaceManager<br/>(ProfileKeyedService)"]
             Spaces["AgentSpace 池<br/>(WebContents 脱离 TabStripModel + 前台调度加速)"]
@@ -274,7 +274,7 @@ flowchart TB
   - [target_handler.cc:1694-1722](/home/gadin/.t3/projects/brower-agent/sources/chromium-158.0.8127.36/content/browser/devtools/protocol/target_handler.cc#L1694-L1722)（`ApplyNetworkContextParamsOverrides`）
   - [storage_partition.h:104](/home/gadin/.t3/projects/brower-agent/sources/chromium-158.0.8127.36/content/public/browser/storage_partition.h#L104)（`GetNetworkContext()`）
 
-在 Chromium 158 中，当构建 `network::mojom::NetworkContextParams` 时，只要**解绑默认的系统代理监听接收端**（`context_params->proxy_config_client_receiver` 不再绑定到 OS 的 `SystemProxyConfigService`，而是绑定到我们自研的 `AgentProxyConfigClient`），就能**彻底屏蔽宿主机系统代理变更、环境变量（`http_proxy`/`ALL_PROXY`）或桌面环境网络切换对本浏览器的干扰**，同时支持运行时通过 `OnProxyConfigUpdated(...)` 热切换出口而无需重启浏览器。
+在 Chromium 158 中，当构建 `network::mojom::NetworkContextParams` 时，只要**解绑默认的系统代理监听接收端**（`context_params->proxy_config_client_receiver` 不再绑定到 OS 的 `SystemProxyConfigService`，而是绑定到自己写的 `AgentProxyConfigClient`），就能**彻底屏蔽宿主机系统代理变更、环境变量（`http_proxy`/`ALL_PROXY`）或桌面环境网络切换对本浏览器的干扰**，同时支持运行时通过 `OnProxyConfigUpdated(...)` 热切换出口而无需重启浏览器。
 
 #### 2. `NetworkTunnelProvider` 通用 VPN 接入接口设计
 
@@ -282,7 +282,7 @@ flowchart TB
 
 1. **接入模式**：
    - **标准隧道端点接入（Endpoint Mode）**：直接接入任意外部 VPN 核心暴露的 `socks5://`、`http://`、`https://`、`quic://` 或本地 UDS 代理端点（支持鉴权、bypass 规则、延迟探测与热切换）；
-   - **托管式 VPN 插件接入（Managed Sidecar Mode）**：预留标准插件清单（`vpn-provider.json`），允许浏览器按需拉起用户配置的 user-space VPN 进程（如 `wireproxy` / `sing-box` / 自研 WireGuard 用户态隧道），在**不修改宿主机系统路由表、不需要 root 权限**的前提下，把浏览器流量完全封闭在该隧道内。
+   - **托管式 VPN 插件接入（Managed Sidecar Mode）**：预留标准插件清单（`vpn-provider.json`），允许浏览器按需拉起用户配置的 user-space VPN 进程（如 `wireproxy` / `sing-box` / 自己写的 WireGuard 用户态隧道），在**不修改宿主机系统路由表、不需要 root 权限**的前提下，把浏览器流量完全封闭在该隧道内。
 2. **三道防泄漏与防干扰防线（缺一不可）**：
    - **防 DNS 泄漏**：SOCKS5 模式下强制远端域名解析（`socks5://` 不做本地 DNS 解析），并支持在 `NetworkService` 层配置独立 **DoH（DNS-over-HTTPS）** 覆盖宿主机 `/etc/resolv.conf`；
    - **防 WebRTC 绕行泄漏**：强制设置 `prefs::kWebRTCIPHandlingPolicy = "disable_non_proxied_udp"`，禁止 WebRTC 绕过隧道直连宿主机网卡；
@@ -341,7 +341,7 @@ flowchart TB
 | :--- | :--- | :--- |
 | **1. 标准 MCP Server** (`clients/mcp-server/`) | Claude Code / Codex / Cursor / Windsurf / Cline 等所有 MCP 客户端 | 通过 stdio/Streamable HTTP 暴露：**MCP Tools**（空间管理、感知、批量动作、人工接管）、**MCP Resources**（实时页面快照、控制台/网络流、活跃空间列表）、**MCP Prompts**（内置推荐工作流模板），直连底层 UDS |
 | **2. Agent Skills 引导包** (`clients/skills/`) | 支持 `SKILL.md` / Rules 的 Coding & General Agent | 用极简结构化说明教会 Agent 最佳实践：优先读 `WebMCP` → 再读紧凑 `snapshot` `@ref` → 用 `act.batch` 合并多步减少 Token → 敏感任务切 `private` 空间 → 遇到 2FA/验证码主动调 `takeover.request` |
-| **3. 通用 Tool SDK & CLI** (`clients/cli/`, `clients/sdk/`) | OpenAI / Anthropic / Gemini Function Calling、LangChain、自研 Python/TS Agent | 提供零依赖 CLI（适合 Shell 型 Agent 直接调用）与标准 JSON Schema Tool 定义包，支持单步动作与事务式脚本批处理 |
+| **3. 通用 Tool SDK & CLI** (`clients/cli/`, `clients/sdk/`) | OpenAI / Anthropic / Gemini Function Calling、LangChain、自己写的 Python/TS Agent | 提供零依赖 CLI（适合 Shell 型 Agent 直接调用）与标准 JSON Schema Tool 定义包，支持单步动作与事务式脚本批处理 |
 | **4. 站点语义插件（Site Plugins）** (`clients/site-plugins/`) | 所有上层 Agent 共享 | 类似「给不支持 WebMCP 的旧网站补一层本地声明式工具」：按域名定义可复用的语义动作（如 `github.readPR`、`jira.createIssue`），基于稳定语义定位器而非脆性坐标，自动注入到 MCP Tools / `agent.capabilities` 列表中供 Agent 直接调用 |
 
 ---
@@ -360,7 +360,7 @@ brower-agent/
 │   ├── 0002-register-agent-profile-service.patch
 │   ├── 0003-toolbar-agent-dock-button.patch
 │   └── 0004-build-gn-wire-agent-kernel.patch
-├── kernel/                          # 完全自研的 C++ 代码，构建时软链/复制到 chrome/browser/agent_kernel/
+├── kernel/                          # 自己写的 C++ 控制内核代码，构建时软链/复制到 chrome/browser/agent_kernel/
 │   ├── BUILD.gn
 │   ├── agent_space_manager.{h,cc}
 │   ├── agent_space.{h,cc}

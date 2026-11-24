@@ -69,7 +69,7 @@ node modules/cli.mjs doctor
 
 ---
 
-## 4. 通用 Function-Calling SDK 插件（OpenAI / Gemini / Anthropic / 自研框架）
+## 4. 通用 Function-Calling SDK 插件（OpenAI / Gemini / Anthropic / 自己写的框架）
 
 ```js
 import { createGadorPlugin } from "./clients/plugin/sdk.mjs";

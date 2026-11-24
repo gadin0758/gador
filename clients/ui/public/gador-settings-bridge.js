@@ -1525,7 +1525,7 @@ function renderModuleInstallGate(root, moduleId, meta) {
           el("div", { class: "gd-item-info" }, [
             el("strong", { text: `${meta.moduleName} 尚未整合` }),
             el("span", {
-              text: "为保证安全边界，本页面不直接提供模块安装入口；如需启用官方模块或自研第三方同类模块，请查阅《自定义模块开发与签名验证指南》(docs/module-developer-guide.md)，在终端通过 gador-mod 完成签名核验后整合。",
+              text: "为保证安全边界，本页面不直接提供模块安装入口；如需启用自己写的或第三方同类模块，请查阅《自定义模块开发与签名验证指南》(docs/module-developer-guide.md)，在终端通过 gador-mod 完成签名核验后整合。",
             }),
           ]),
           el("div", { class: "gd-tags" }, [
