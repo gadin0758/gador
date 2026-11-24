@@ -1,0 +1,38 @@
+--- a/components/viz/service/BUILD.gn
++++ b/components/viz/service/BUILD.gn
+@@ -524,7 +524,7 @@
+   }
+ 
+   if (use_vaapi) {
+-    deps += [ "//media/gpu/vaapi" ]
++    deps += [ "//media/gpu" ]
+   }
+ 
+   if (enable_vulkan) {
+--- a/media/gpu/BUILD.gn
++++ b/media/gpu/BUILD.gn
+@@ -44,10 +44,12 @@
+     "//chromeos/ash/experiences/arc/video_accelerator:common",
+     "//components/chromeos_camera/*",
+     "//components/mirroring/service:mirroring_service",
++    "//components/viz/service",
+     "//components/viz/service/main",
+     "//content/gpu:*",
+     "//content/renderer:*",
+     "//media/audio:unit_tests",
+     "//media/gpu/fuzzers/av1_builder/*",
+     "//media/gpu/ipc/*",
++    "//media/gpu/sandbox",
+     "//media/gpu/test/*",
+     "//media/gpu/vaapi/*",
+--- a/media/gpu/sandbox/BUILD.gn
++++ b/media/gpu/sandbox/BUILD.gn
+@@ -25,7 +25,7 @@
+     "//sandbox/policy",
+   ]
+   if (use_vaapi) {
+-    deps += [ "//media/gpu/vaapi:common" ]
++    deps += [ "//media/gpu" ]
+   }
+   if (use_v4l2_codec) {
+     deps += [ "//media/gpu/v4l2" ]
