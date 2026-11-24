@@ -14,7 +14,7 @@
     "package": "bash scripts/package-gador.sh",
     "test": "node --test tests/regression/*.test.mjs",
     "test:cpp": "mkdir -p build && clang++ -std=c++20 -Wall -Wextra -Werror -pthread -I. kernel/core/protocol_framing.cc kernel/core/security_guard.cc kernel/core/kernel_state.cc kernel/core/uds_posix_server.cc kernel/core/rpc_router.cc kernel/core/kernel_core_unittest.cc -o build/kernel_core_unittest && clang++ -std=c++20 -Wall -Wextra -Werror -pthread -I. kernel/core/protocol_framing.cc kernel/core/security_guard.cc kernel/core/kernel_state.cc kernel/core/uds_posix_server.cc kernel/core/rpc_router.cc kernel/core/agent_kernel_daemon_main.cc -o build/agent_kernel_daemon && ./build/kernel_core_unittest",
-    "test:gate": "npm run test:cpp && node --test tests/regression/p0-kernel.test.mjs tests/regression/cpp-bridge-e2e.test.mjs tests/regression/mcp-server.test.mjs tests/regression/plugin-cli.test.mjs tests/regression/ui-bridge.test.mjs tests/regression/settings-and-features.test.mjs tests/regression/skill-sync.test.mjs",
+    "test:gate": "npm run test:cpp && node --test tests/regression/p0-kernel.test.mjs tests/regression/cpp-bridge-e2e.test.mjs tests/regression/mcp-server.test.mjs tests/regression/plugin-cli.test.mjs tests/regression/ui-bridge.test.mjs tests/regression/settings-and-features.test.mjs tests/regression/sandbox-security.test.mjs tests/regression/multilayer-security.test.mjs tests/regression/skill-sync.test.mjs",
     "fixtures": "node tests/regression/fixture-server.mjs"
   }
 }

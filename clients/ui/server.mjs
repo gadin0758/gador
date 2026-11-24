@@ -294,6 +294,9 @@ function sendJson(res, status, data) {
   res.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
   });
   res.end(JSON.stringify(data));
 }
@@ -384,15 +387,29 @@ export async function startGadorUiServer({
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url || "/", `http://${host}`);
 
-    // Block cross-origin browser requests (loopback CSRF protection);
+    // 1. Anti-DNS-Rebinding guard: Host header MUST be strictly loopback
+    const rawHost = String(req.headers.host || "").trim().toLowerCase();
+    if (rawHost) {
+      const hostOnly = rawHost.startsWith("[")
+        ? rawHost.slice(0, rawHost.indexOf("]") + 1)
+        : rawHost.split(":")[0];
+      if (hostOnly !== "127.0.0.1" && hostOnly !== "localhost" && hostOnly !== "[::1]") {
+        sendJson(res, 403, { error: "Forbidden Host header (DNS rebinding blocked)" });
+        return;
+      }
+    }
+
+    // 2. Block cross-origin browser requests (loopback CSRF protection);
     // allow our bundled Gador extension and Chromium's fused chrome://settings WebUI
     const origin = req.headers.origin;
+    let isExtensionOrigin = false;
     if (origin) {
       try {
         const originUrl = new URL(origin);
         const isLoopback = originUrl.hostname === "127.0.0.1" || originUrl.hostname === "localhost";
         const isExtension = originUrl.protocol === "chrome-extension:";
         const isChromeSettings = origin === "chrome://settings";
+        isExtensionOrigin = isExtension;
         if (!isLoopback && !isExtension && !isChromeSettings) {
           sendJson(res, 403, { error: "Forbidden cross-origin access" });
           return;
@@ -411,6 +428,40 @@ export async function startGadorUiServer({
         sendJson(res, 403, { error: "Invalid origin" });
         return;
       }
+    } else if (req.headers.referer) {
+      // Secondary CSRF defense: reject requests carrying a cross-site Referer without Origin
+      try {
+        const refUrl = new URL(req.headers.referer);
+        const refLoopback = refUrl.hostname === "127.0.0.1" || refUrl.hostname === "localhost";
+        const refAllowed =
+          refLoopback ||
+          refUrl.protocol === "chrome-extension:" ||
+          refUrl.origin === "chrome://settings";
+        if (!refAllowed) {
+          sendJson(res, 403, { error: "Forbidden cross-site Referer" });
+          return;
+        }
+      } catch {
+        sendJson(res, 403, { error: "Invalid Referer" });
+        return;
+      }
+    }
+
+    // 3. Restrict privileged host/module-lifecycle endpoints from arbitrary third-party chrome-extension:// origins
+    const isPrivilegedEndpoint =
+      url.pathname === "/api/user/open-native" ||
+      url.pathname.startsWith("/api/modules/auth") ||
+      (url.pathname.startsWith("/api/modules/") &&
+        (url.pathname.endsWith("/install") ||
+          url.pathname.endsWith("/install-challenge") ||
+          url.pathname.endsWith("/uninstall")));
+    if (isExtensionOrigin && isPrivilegedEndpoint) {
+      sendJson(res, 403, {
+        ok: false,
+        code: "ERR_FORBIDDEN_EXTENSION_ORIGIN",
+        error: "Privileged host/module endpoints cannot be called from chrome-extension:// origins",
+      });
+      return;
     }
 
     try {
@@ -419,7 +470,19 @@ export async function startGadorUiServer({
         const body = await readJsonBody(req);
         const incognito = Boolean(body.incognito);
         const targetUrl = String(body.url || (incognito ? "about:blank" : "")).trim();
-        const isSafeHttp = /^https?:\/\//i.test(targetUrl);
+        if (targetUrl.length > 2048 || /[\x00-\x1f\x7f]/.test(targetUrl)) {
+          sendJson(res, 400, { ok: false, error: "Invalid control characters or length in URL" });
+          return;
+        }
+        let isSafeHttp = false;
+        if (/^https?:\/\//i.test(targetUrl)) {
+          try {
+            const parsed = new URL(targetUrl);
+            isSafeHttp = parsed.protocol === "http:" || parsed.protocol === "https:";
+          } catch {
+            isSafeHttp = false;
+          }
+        }
         const isAllowedSpecial = targetUrl === "about:blank" || targetUrl === "chrome://newtab";
         if (!ALLOWED_NATIVE_USER_URLS.has(targetUrl) && !isSafeHttp && !(incognito && (!targetUrl || isAllowedSpecial))) {
           sendJson(res, 400, { ok: false, error: "URL not allowed for native launch" });
@@ -454,7 +517,8 @@ export async function startGadorUiServer({
           args.push("--incognito");
         }
         if (targetUrl && !(incognito && targetUrl === "about:blank")) {
-          args.push(targetUrl);
+          // End-of-flags separator prevents Chromium CLI flag injection via URL argument
+          args.push("--", targetUrl);
         }
         if (typeof launchNative === "function") {
           await launchNative({ bin, args, env, targetUrl, incognito });
@@ -1038,8 +1102,16 @@ export async function startGadorUiServer({
       // Serve decoupled frontend files from clients/ui/public/
       const relPath = url.pathname === "/" ? "index.html" : url.pathname.replace(/^\/+/, "");
       const filePath = path.resolve(PUBLIC_DIR, relPath);
-      if (!filePath.startsWith(PUBLIC_DIR) || !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
-        res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+      if (
+        !filePath.startsWith(PUBLIC_DIR + path.sep) ||
+        !fs.existsSync(filePath) ||
+        fs.statSync(filePath).isDirectory()
+      ) {
+        res.writeHead(404, {
+          "Content-Type": "text/plain; charset=utf-8",
+          "X-Content-Type-Options": "nosniff",
+          "X-Frame-Options": "DENY",
+        });
         res.end("Not Found");
         return;
       }
@@ -1048,6 +1120,9 @@ export async function startGadorUiServer({
       res.writeHead(200, {
         "Content-Type": MIME_TYPES[ext] || "application/octet-stream",
         "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Referrer-Policy": "no-referrer",
       });
       fs.createReadStream(filePath).pipe(res);
     } catch (err) {

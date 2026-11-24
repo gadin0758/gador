@@ -91,15 +91,14 @@ stateDiagram-v2
 
 ### 5.1 为什么选用 `bubblewrap (bwrap)` 而非重型 Docker 守护进程
 - **零常驻占用**：没有后台常驻容器守护进程，**无模块启用时容器绝对不启动（`state: "STOPPED_IDLE"`，内存占用 `0 bytes`）**；
-- **按需懒启动 + 60 秒空闲自动回收**：仅在模块已通过签名验证并启用且收到调用时才按需拉起容器（启动耗时 `< 50 ms`），空闲 60 秒或最后一个模块停用/卸载时立即销毁进程释放全部内存；
-- **硬资源上限**：每个模块容器默认限制 V8 堆内存 `64 MiB`（`--max-old-space-size=64`，最高不超过 `128 MiB`）与单次执行 `5000 ms` 强制超时熔断；
-- **真 Linux 内核命名空间隔离**：
-  - `--unshare-all`（独立 User / PID / Mount / IPC / UTS / Network 命名空间）+ `--cap-drop ALL` + `--die-with-parent` + `--new-session`；
-  - `--clearenv` 清空宿主机全部环境变量；
-  - 仅以只读方式挂载 `/sandbox/module`（模块自身代码不可自篡改），仅允许写入隔离目录 `/sandbox/data`（`~/.config/gador/sandbox-data/<moduleId>`）与内存 `/tmp`；
-  - 宿主机 `$HOME`、`~/.ssh`、`~/.config/gador/keys`、`~/.config/chromium`、`/etc/shadow` 对容器内代码**物理不可见**；
-  - 默认彻底断网（不共享网络命名空间），除非模块在 `module.json` 中显式声明 `sandbox.allowNetwork: true`；
-  - 无 `bwrap` 环境自动回退至 Node `--permission` 文件系统最小权限沙箱。
+- **按需懒启动 + 空闲自动回收**：仅在模块已通过签名验证并启用且收到调用时才按需拉起容器（启动耗时 `< 50 ms`），空闲 60 秒（模块清单上限不超过 120 秒）或最后一个模块停用/卸载时立即按独立进程组整组终止释放全部内存；
+- **多层硬资源与防逃逸上限**：
+  - **V8 堆 + 实时进程树 RSS 看门狗**：默认限制 V8 堆 `64 MiB`（最高 `128 MiB`）+ 每 120ms 监测进程树总物理内存（`128 MiB` 硬上限，专门查杀绕过 V8 堆限制的堆外 `Buffer`/`ArrayBuffer` 内存炸弹，`ERR_SANDBOX_OOM`）+ 单次执行 `5000 ms` 强制超时熔断；
+  - **内核 `bwrap` + Node `--permission` 双层隔离**：`--unshare-all`、`--unshare-cgroup-try`、`--cap-drop ALL`、`--die-with-parent`、`--new-session`、`--clearenv`、叠加 Node `--permission` 运行时权限墙（物理封死 `child_process` 子进程、`worker_threads`、原生 `.node` 插件及越界文件读取）；
+  - **存储与 tmpfs 硬配额**：`/tmp` 与 `/sandbox` 强制 `4 MiB` tmpfs 上限（`--size 4194304`）；`prlimit` 强制单文件 `8 MiB`（`--fsize`）、最大打开文件描述符 `64`（`--nofile`）、禁用 core dump（`--core=0`）；`/sandbox/data` 总配额 `16 MiB` 且严禁符号链接；
+  - **专用 FD 3 + 128-bit 随机 Nonce 认证 IPC**：宿主机完全忽略模块 `stdout`（彻底防 `process.stdout.write` 伪造响应），专用 FD 3 每帧校验随机 Nonce（加载模块前已从 `process.env` 擦除），单帧上限 `256 KiB`，且 `worker.mjs` 在加载模块前快照关键内置函数免疫 `JSON.stringify` / 原型链投毒；
+  - **零信任网络策略**：默认彻底断网；模块清单单方面声明 `sandbox.allowNetwork: true` 也会被宿主机策略拦截（防止容器直连宿主机 `127.0.0.1` 内部端口），仅允许宿主机显式白名单授权；
+  - 无 `bwrap` 环境自动回退至 Node `--permission` + FD 3 Nonce + RSS 看门狗最小权限沙箱。
 
 ---
 

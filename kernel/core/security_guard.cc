@@ -44,6 +44,82 @@ bool ContainsAny(std::string_view haystack,
   return false;
 }
 
+int HexValue(char c) {
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'a' && c <= 'f') return 10 + (c - 'a');
+  if (c >= 'A' && c <= 'F') return 10 + (c - 'A');
+  return -1;
+}
+
+// Decode JSON string escapes (including \u00XX ASCII Unicode escapes) so
+// bypasses like "\u0063hrome://..." or "\u0070assword" cannot evade checks.
+std::string DecodeJsonEscapes(std::string_view input) {
+  std::string out;
+  out.reserve(input.size());
+  for (size_t i = 0; i < input.size(); ++i) {
+    if (input[i] == '\\' && i + 1 < input.size()) {
+      char next = input[i + 1];
+      if (next == 'u' && i + 5 < input.size()) {
+        int h0 = HexValue(input[i + 2]);
+        int h1 = HexValue(input[i + 3]);
+        int h2 = HexValue(input[i + 4]);
+        int h3 = HexValue(input[i + 5]);
+        if (h0 >= 0 && h1 >= 0 && h2 >= 0 && h3 >= 0) {
+          unsigned int codepoint = (h0 << 12) | (h1 << 8) | (h2 << 4) | h3;
+          if (codepoint <= 0x7F) {
+            out.push_back(static_cast<char>(codepoint));
+          }
+          i += 5;
+          continue;
+        }
+      }
+      switch (next) {
+        case '"': out.push_back('"'); ++i; continue;
+        case '\\': out.push_back('\\'); ++i; continue;
+        case '/': out.push_back('/'); ++i; continue;
+        case 't': out.push_back('\t'); ++i; continue;
+        case 'r': out.push_back('\r'); ++i; continue;
+        case 'n': out.push_back('\n'); ++i; continue;
+        default: break;
+      }
+    }
+    out.push_back(input[i]);
+  }
+  return out;
+}
+
+// Strip all ASCII control chars and whitespace before URL scheme comparison
+// (blocks browsers' lenient parsing of "java\tscript:", "ch\nrome://", etc.).
+std::string NormalizeUrlForPolicy(std::string_view raw_url) {
+  std::string decoded = DecodeJsonEscapes(raw_url);
+  std::string out;
+  out.reserve(decoded.size());
+  for (unsigned char c : decoded) {
+    if (c <= 0x20 || c == 0x7F) {
+      continue;
+    }
+    out.push_back(static_cast<char>(std::tolower(c)));
+  }
+  return out;
+}
+
+// Normalize JS/DOM payloads by decoding nested escapes, lowercasing, and
+// stripping whitespace/quotes so `type = "\u0070assword"` normalizes to `type=password`.
+std::string NormalizePayloadForSensitiveCheck(std::string_view raw_json) {
+  // Decode twice to catch JSON-encoded JS strings like "\\u0070assword"
+  std::string d1 = DecodeJsonEscapes(raw_json);
+  std::string d2 = DecodeJsonEscapes(d1);
+  std::string compact;
+  compact.reserve(d2.size());
+  for (unsigned char c : d2) {
+    if (std::isspace(c) || c == '"' || c == '\'' || c == '`') {
+      continue;
+    }
+    compact.push_back(static_cast<char>(std::tolower(c)));
+  }
+  return compact;
+}
+
 // Lightweight JSON string field extractor for checking `"url":"..."` in
 // Page.navigate parameters without external dependencies.
 std::string ExtractJsonStringField(std::string_view json,
@@ -68,17 +144,18 @@ std::string ExtractJsonStringField(std::string_view json,
     return "";
   }
   ++pos;
-  std::string value;
+  std::string raw_value;
   while (pos < json.size()) {
     char c = json[pos++];
     if (c == '\\' && pos < json.size()) {
-      value.push_back(json[pos++]);
+      raw_value.push_back(c);
+      raw_value.push_back(json[pos++]);
       continue;
     }
     if (c == '"') {
-      return value;
+      return DecodeJsonEscapes(raw_value);
     }
-    value.push_back(c);
+    raw_value.push_back(c);
   }
   return "";
 }
@@ -105,7 +182,7 @@ bool IsMutatingCdpMethod(std::string_view method) {
 }  // namespace
 
 SecurityDecision CheckAgentUrlPolicy(std::string_view raw_url) {
-  std::string url = ToLowerTrimmed(raw_url);
+  std::string url = NormalizeUrlForPolicy(raw_url);
   if (url.empty() || url == "about:blank") {
     return {};
   }
@@ -116,16 +193,19 @@ SecurityDecision CheckAgentUrlPolicy(std::string_view raw_url) {
     url.erase(0, 12);
   }
 
-  static constexpr std::array<std::string_view, 9> kBlockedPrefixes = {
+  static constexpr std::array<std::string_view, 12> kBlockedPrefixes = {
       "chrome://",
       "chrome-untrusted://",
       "chrome-extension://",
       "chrome-search://",
+      "chrome-error://",
       "devtools://",
       "file://",
       "filesystem:",
       "blob:chrome://",
       "blob:file://",
+      "data:text/html",
+      "data:image/svg+xml",
   };
 
   for (std::string_view prefix : kBlockedPrefixes) {
@@ -133,17 +213,18 @@ SecurityDecision CheckAgentUrlPolicy(std::string_view raw_url) {
       return {
           SecurityVerdict::kDenyDomain,
           "blocked_internal_or_local_scheme",
-          "Access to browser internals, password/payment storage, and local "
-          "files is strictly forbidden for AI Agents",
+          "Access to browser internals, password/payment storage, executable "
+          "data documents, and local files is strictly forbidden for AI Agents",
       };
     }
   }
 
-  if (StartsWith(url, "javascript:")) {
+  if (StartsWith(url, "javascript:") || StartsWith(url, "vbscript:") ||
+      StartsWith(url, "data:application/xhtml")) {
     return {
         SecurityVerdict::kDenyDomain,
         "blocked_javascript_navigation",
-        "Direct javascript: navigation URLs are blocked for AI Agents",
+        "Direct script/active-document navigation URLs are blocked for AI Agents",
     };
   }
 
@@ -209,8 +290,9 @@ SecurityDecision CheckCdpPolicy(std::string_view cdp_method,
                                 std::string_view current_page_url,
                                 bool password_field_focused) {
   // 1. Hard-deny CDP domains and methods that touch Autofill cards/addresses,
-  //    WebAuthn/Passkeys, FedCM, local files, or browser-level targets.
-  static constexpr std::array<std::string_view, 8> kBlockedDomains = {
+  //    WebAuthn/Passkeys, FedCM, local files, script injection, interception,
+  //    debugger inspection, or browser-level targets.
+  static constexpr std::array<std::string_view, 10> kBlockedDomains = {
       "Autofill.",
       "WebAuthn.",
       "FedCm.",
@@ -219,6 +301,8 @@ SecurityDecision CheckCdpPolicy(std::string_view cdp_method,
       "IO.",
       "SystemInfo.",
       "Tethering.",
+      "Debugger.",
+      "Fetch.",
   };
   for (std::string_view dom : kBlockedDomains) {
     if (StartsWith(cdp_method, dom)) {
@@ -226,20 +310,25 @@ SecurityDecision CheckCdpPolicy(std::string_view cdp_method,
           SecurityVerdict::kDenyDomain,
           "blocked_sensitive_cdp_domain",
           "CDP domain is blocked to protect saved passwords, payment methods, "
-          "passkeys, and local files",
+          "passkeys, network interception, and local files",
       };
     }
   }
 
   if (cdp_method == "DOM.setFileInputFiles" ||
       cdp_method == "Target.createTarget" ||
+      cdp_method == "Target.attachToTarget" ||
       cdp_method == "Target.attachToBrowserTarget" ||
       cdp_method == "Target.exposeDevToolsProtocol" ||
-      cdp_method == "Storage.getSharedStorageEntries") {
+      cdp_method == "Storage.getSharedStorageEntries" ||
+      cdp_method == "Page.addScriptToEvaluateOnNewDocument" ||
+      cdp_method == "Page.setDocumentContent" ||
+      cdp_method == "Page.createIsolatedWorld") {
     return {
         SecurityVerdict::kDenyDomain,
         "blocked_sensitive_cdp_method",
-        "CDP method is blocked to protect local files and browser internals",
+        "CDP method is blocked to protect local files, script injection, and "
+        "browser internals",
     };
   }
 
@@ -277,31 +366,27 @@ SecurityDecision CheckCdpPolicy(std::string_view cdp_method,
   }
 
   // 5. Payload inspection on JS evaluation & DOM mutation to block scripted
-  //    password/credit-card/PaymentRequest/WebAuthn interaction.
+  //    password/credit-card/PaymentRequest/WebAuthn interaction (escape- & whitespace-resistant).
   if (cdp_method == "Runtime.evaluate" ||
       cdp_method == "Runtime.callFunctionOn" ||
       cdp_method == "DOM.setAttributeValue" ||
       cdp_method == "DOM.setAttributesAsText" ||
       cdp_method == "DOM.setNodeValue") {
-    std::string lower_params = ToLowerTrimmed(cdp_params_json);
-    if (ContainsAny(lower_params, {
-                                      "type=\\\"password\\\"",
-                                      "type=\\'password\\'",
-                                      "type=\"password\"",
-                                      "type='password'",
-                                      "type=password",
-                                      "current-password",
-                                      "new-password",
-                                      "cc-number",
-                                      "cc-csc",
-                                      "cc-exp",
-                                      "cc-name",
-                                      "navigator.credentials",
-                                      "paymentrequest",
-                                      "creditcard",
-                                      "card_number",
-                                      "cardnumber",
-                                  })) {
+    std::string compact_params = NormalizePayloadForSensitiveCheck(cdp_params_json);
+    if (ContainsAny(compact_params, {
+                                        "type=password",
+                                        "current-password",
+                                        "new-password",
+                                        "cc-number",
+                                        "cc-csc",
+                                        "cc-exp",
+                                        "cc-name",
+                                        "navigator.credentials",
+                                        "paymentrequest",
+                                        "creditcard",
+                                        "card_number",
+                                        "cardnumber",
+                                    })) {
       return {
           SecurityVerdict::kRequireHumanTakeover,
           "credential_or_payment_field_requires_human",

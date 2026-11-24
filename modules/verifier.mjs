@@ -499,17 +499,30 @@ export function consumeInstallChallenge({
     throw err;
   }
 
+  const MAX_CHALLENGE_FAILURES = 3;
+  ch.failedAttempts = Number(ch.failedAttempts || 0);
+
   const normalizedInput = String(confirmCode).trim().toUpperCase();
   const a = Buffer.from(normalizedInput, "utf8");
   const b = Buffer.from(ch.confirmCode, "utf8");
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    ch.failedAttempts += 1;
+    const locked = ch.failedAttempts >= MAX_CHALLENGE_FAILURES;
+    if (locked) {
+      activeChallenges.delete(challengeId);
+    }
     appendModuleAuditLog({
       action: "install_verify_failed",
       moduleId,
-      reason: "confirm_code_mismatch",
+      reason: locked ? "challenge_locked_max_attempts" : "confirm_code_mismatch",
+      failedAttempts: ch.failedAttempts,
       ok: false,
     });
-    const err = new Error("Verification confirmation code does not match");
+    const err = new Error(
+      locked
+        ? "Install verification challenge invalidated after too many failed attempts; request a new challenge"
+        : "Verification confirmation code does not match"
+    );
     err.code = "ERR_INSTALL_VERIFICATION_FAILED";
     throw err;
   }
@@ -522,13 +535,23 @@ export function consumeInstallChallenge({
   }
 
   if (!verifyModuleInstallPassphrase(passphrase)) {
+    ch.failedAttempts += 1;
+    const locked = ch.failedAttempts >= MAX_CHALLENGE_FAILURES;
+    if (locked) {
+      activeChallenges.delete(challengeId);
+    }
     appendModuleAuditLog({
       action: "install_verify_failed",
       moduleId,
-      reason: "invalid_passphrase",
+      reason: locked ? "challenge_locked_max_attempts" : "invalid_passphrase",
+      failedAttempts: ch.failedAttempts,
       ok: false,
     });
-    const err = new Error("Module install passphrase is incorrect");
+    const err = new Error(
+      locked
+        ? "Install verification challenge invalidated after too many failed passphrase attempts"
+        : "Module install passphrase is incorrect"
+    );
     err.code = "ERR_INSTALL_VERIFICATION_FAILED";
     throw err;
   }

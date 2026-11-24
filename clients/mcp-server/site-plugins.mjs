@@ -60,9 +60,42 @@ function interpolateUrlTemplate(template, args = {}) {
   });
 }
 
+function validateSitePluginUrl(rawUrl, expectedDomain) {
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    const err = new Error(`Invalid site plugin URL: ${rawUrl}`);
+    err.code = "ERR_INVALID_PARAMS";
+    throw err;
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    const err = new Error(
+      `Site plugin URL scheme "${parsed.protocol}" is forbidden (only http/https allowed)`
+    );
+    err.code = "ERR_DOMAIN_DENIED";
+    throw err;
+  }
+  if (parsed.username || parsed.password) {
+    const err = new Error("Site plugin URLs must not contain embedded credentials");
+    err.code = "ERR_DOMAIN_DENIED";
+    throw err;
+  }
+  const host = parsed.hostname.toLowerCase();
+  const domain = String(expectedDomain || "").trim().toLowerCase();
+  if (!domain || (host !== domain && !host.endsWith(`.${domain}`))) {
+    const err = new Error(
+      `Site plugin URL host "${host}" escapes declared plugin domain "${domain}"`
+    );
+    err.code = "ERR_DOMAIN_DENIED";
+    throw err;
+  }
+  return parsed.toString();
+}
+
 /**
  * Executes a declarative Site Plugin against a connected AgentKernelClient.
- * Enforces confirmation gates and safe URL-segment interpolation.
+ * Enforces confirmation gates, safe URL-segment interpolation, and strict domain binding.
  */
 export async function executeSitePlugin(client, plugin, args = {}) {
   if (plugin.requiresConfirmation) {
@@ -77,11 +110,12 @@ export async function executeSitePlugin(client, plugin, args = {}) {
   const results = [];
   for (const step of plugin.steps) {
     if (step.op === "open") {
-      const url = interpolateUrlTemplate(step.url, args);
+      const rawUrl = interpolateUrlTemplate(step.url, args);
+      const safeUrl = validateSitePluginUrl(rawUrl, plugin.domain);
       results.push(
         await client.openPage({
           spaceId: args.spaceId,
-          url,
+          url: safeUrl,
         })
       );
     }

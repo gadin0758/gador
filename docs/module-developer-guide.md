@@ -25,7 +25,7 @@
 1. **Ed25519 数字签名 + 全文件 SHA-256 清单核验**：模块目录内每一个文件都必须与 `signature.json` 完全一致，发布者公钥必须位于信任密钥环（内置 `modules/trusted-keys.json` 或用户显式信任的 `~/.config/gador/trusted-module-keys.json`），禁止符号链接与多余未签名文件；
 2. **人工两步验证 + 强烈建议启用本机安装密码锁**：安装时必须人工核对发布者、SHA-256 摘要并输入 120 秒单次有效确认码（或 CLI `--confirm-digest <hex>`）；执行 `gador-mod auth set-passphrase` 开启 `scrypt` 密码锁后，任何安装均须同步验密；
 3. **源目录与安装目录物理隔离 + 原子暂存替换**：模块先复制至临时 `.staging` 目录并复核签名，通过后才原子切换至 `0700` 权限 `~/.config/gador/installed-modules/<id>/`；
-4. **运行时零信任复核、轻量容器隔离与审计日志**：每次 `gador --desktop` 启动挂载扩展、`gador-mod enable`、`gador-mod doctor` 及启动模块容器前均重新校验已安装目录签名；模块后端逻辑运行于 **无守护进程的超轻量级 `bubblewrap (bwrap)` Linux 命名空间容器**（无模块时不启动、`0 bytes` 空闲占用、64 MiB 堆上限、60 秒空闲自动回收、默认断网、清零宿主机环境变量、宿主机 `$HOME`/密钥目录完全不可见、模块代码只读挂载）；所有操作写入 `0600` 权限 `~/.config/gador/module-audit.log`。
+4. **运行时零信任复核、双层加固轻量容器隔离与审计日志**：每次 `gador --desktop` 启动挂载扩展、`gador-mod enable`、`gador-mod doctor` 及启动模块容器前均重新校验已安装目录签名；模块后端逻辑运行于 **无守护进程的超轻量级 `bubblewrap (bwrap)` + Node `--permission` + `prlimit` 双层加固容器**（无模块时不启动、`0 bytes` 空闲占用、64 MiB 堆上限 + 128 MiB 进程树 RSS 看门狗、禁止子进程/`worker_threads`/原生插件、`/tmp` 硬限 4 MiB、单文件 8 MiB / 数据目录 16 MiB 配额且禁符号链接、独立 FD 3 + 128-bit 随机 Nonce 认证 IPC、模块单方面声明 `allowNetwork: true` 默认被宿主机拒绝、60 秒空闲自动整组回收）；所有操作写入 `0600` 权限 `~/.config/gador/module-audit.log`。
 
 > 查看与验证容器隔离状态：
 > ```bash

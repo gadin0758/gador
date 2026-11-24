@@ -1,6 +1,6 @@
+import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import path from "node:path";
-import readline from "node:readline";
 import { fileURLToPath } from "node:url";
 
 import { getModulesState } from "../../modules/registry.mjs";
@@ -83,10 +83,34 @@ export class GadorMcpServer {
   }
 
   async handleRpcMessage(msg) {
+    if (!msg || typeof msg !== "object" || Array.isArray(msg)) {
+      return {
+        jsonrpc: "2.0",
+        id: null,
+        error: { code: -32600, message: "Invalid Request: expected JSON-RPC object" },
+      };
+    }
     // Notifications have no id and expect no response.
     const isNotification = msg.id === undefined || msg.id === null;
     if (isNotification) {
       return null;
+    }
+    if (typeof msg.method !== "string" || !msg.method) {
+      return {
+        jsonrpc: "2.0",
+        id: msg.id,
+        error: { code: -32600, message: "Invalid Request: missing method string" },
+      };
+    }
+    if (
+      msg.params !== undefined &&
+      (msg.params === null || typeof msg.params !== "object" || Array.isArray(msg.params))
+    ) {
+      return {
+        jsonrpc: "2.0",
+        id: msg.id,
+        error: { code: -32602, message: "Invalid params: expected JSON object" },
+      };
     }
 
     try {
@@ -366,9 +390,13 @@ export class GadorMcpServer {
   }
 
   serveStdio(input = process.stdin, output = process.stdout) {
-    const rl = readline.createInterface({ input, crlfDelay: Infinity });
-    rl.on("line", async (line) => {
-      const trimmed = line.trim();
+    const MAX_MCP_FRAME_BYTES = 1024 * 1024; // 1 MiB hard cap per JSON-RPC stdio line
+    let chunks = [];
+    let bufferedBytes = 0;
+    let discardingOversize = false;
+
+    const handleLine = async (rawLine) => {
+      const trimmed = rawLine.trim();
       if (!trimmed) return;
       let msg;
       try {
@@ -387,7 +415,76 @@ export class GadorMcpServer {
       if (response) {
         output.write(JSON.stringify(response) + "\n");
       }
-    });
-    return rl;
+    };
+
+    const onData = (chunk) => {
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), "utf8");
+      let start = 0;
+      for (let i = 0; i < buf.length; i++) {
+        if (buf[i] === 0x0a) {
+          const piece = buf.subarray(start, i);
+          start = i + 1;
+          if (discardingOversize || bufferedBytes + piece.length > MAX_MCP_FRAME_BYTES) {
+            chunks = [];
+            bufferedBytes = 0;
+            discardingOversize = false;
+            output.write(
+              JSON.stringify({
+                jsonrpc: "2.0",
+                id: null,
+                error: {
+                  code: -32600,
+                  message: `Request frame too large (max ${MAX_MCP_FRAME_BYTES} bytes)`,
+                  data: { code: "ERR_FRAME_TOO_LARGE" },
+                },
+              }) + "\n"
+            );
+          } else {
+            chunks.push(piece);
+            const line = Buffer.concat(chunks).toString("utf8");
+            chunks = [];
+            bufferedBytes = 0;
+            handleLine(line);
+          }
+        }
+      }
+      if (start < buf.length) {
+        const rest = buf.subarray(start);
+        if (discardingOversize || bufferedBytes + rest.length > MAX_MCP_FRAME_BYTES) {
+          chunks = [];
+          bufferedBytes = 0;
+          discardingOversize = true;
+        } else {
+          chunks.push(rest);
+          bufferedBytes += rest.length;
+        }
+      }
+    };
+
+    const controller = new EventEmitter();
+    let closed = false;
+    const emitClose = () => {
+      if (closed) return;
+      closed = true;
+      input.off("data", onData);
+      input.off("end", onEnd);
+      input.off("close", emitClose);
+      controller.emit("close");
+    };
+    const onEnd = () => {
+      if (!discardingOversize && bufferedBytes > 0) {
+        const tail = Buffer.concat(chunks).toString("utf8");
+        chunks = [];
+        bufferedBytes = 0;
+        handleLine(tail);
+      }
+      emitClose();
+    };
+    controller.close = emitClose;
+
+    input.on("data", onData);
+    input.on("end", onEnd);
+    input.on("close", emitClose);
+    return controller;
   }
 }
